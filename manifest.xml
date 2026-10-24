@@ -4,17 +4,21 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0" xsi:type="MailApp">
   <Id>3FFC6D76-5F1D-4561-B8BF-68D872DB3412</Id>
-  <Version>1.0.0.2</Version>
-  <ProviderName>MESco</ProviderName>
+  <Version>1.0.0.4</Version>
+  <ProviderName>MESco 2.0</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="CRM MESco"/>
+  <DisplayName DefaultValue="CRM MESco 2.0"/>
   <Description DefaultValue="Notatki CRM z SharePoint"/>
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-128.png"/>
   <SupportUrl DefaultValue="https://mescocompl.sharepoint.com"/>
   <AppDomains>
-    <AppDomain>https://mescocompl.sharepoint.com</AppDomain>
+    <AppDomain>https://localhost:3000</AppDomain>
     <AppDomain>https://login.microsoftonline.com</AppDomain>
+    <AppDomain>https://login.live.com</AppDomain>
+    <AppDomain>https://login.windows.net</AppDomain>
+    <AppDomain>https://account.live.com</AppDomain>
+    <AppDomain>https://mescocompl.sharepoint.com</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Mailbox" />
@@ -84,7 +88,7 @@
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="CRM MESco"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="CRM Notes"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="CRM Notes Dev"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Otworz panel CRM"/>
@@ -140,7 +144,7 @@
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="GroupLabel" DefaultValue="CRM MESco"/>
-          <bt:String id="TaskpaneButton.Label" DefaultValue="CRM Notes"/>
+          <bt:String id="TaskpaneButton.Label" DefaultValue="CRM Notes Dev"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Otworz panel CRM"/>

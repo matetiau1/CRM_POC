@@ -5,7 +5,7 @@ export const msalConfig: Configuration = {
   auth: {
     clientId: "7277cae3-d05a-4a6f-8afe-2edb6b9b6365",
     authority: "https://login.microsoftonline.com/4ad84be0-f918-4dfa-8006-a408554ec666",
-    redirectUri: "https://localhost:3000/taskpane.html",
+        redirectUri: `${window.location.origin}${window.location.pathname}`,
   },
   cache: {
     cacheLocation: "localStorage",

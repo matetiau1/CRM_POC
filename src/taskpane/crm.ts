@@ -131,6 +131,213 @@ export function toContact(item: ListItem): Contact {
     stanowisko: s(f.Stanowisko),
     firmaId: s(f.FirmaID),
     companyGuid: s(f.IdentyfikatorCompanies),
-    aktywny: f.Status === true,
+    aktywny: f.Status !== true,
+  };
+}// ===== Dopisz na koncu src/taskpane/crm.ts =====
+
+const s = (v: unknown) => (v == null ? "" : String(v));
+const n = (v: unknown) => (v == null || v === "" ? 0 : Number(v));
+
+/** Pelne dane firmy - wiecej niz lista firm, uzywane w naglowku. */
+export type CompanyFull = {
+  id: string;
+  guid: string;
+  skrocona: string;
+  pelna: string;
+  nip: string;
+  ulica: string;
+  miasto: string;
+  kod: string;
+  status: string;
+  dataNDA: string;
+  opiekun: string;
+  tecsH: number;
+  supportDay: number;
+  preSalesH: number;
+  uwagi: string;
+};
+
+export function toCompanyFull(item: ListItem): CompanyFull {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    guid: s(f.CompaniesGUID),
+    skrocona: s(f.Nazwa),
+    pelna: s(f["Pe_x0142_nanazwa"]),
+    nip: s(f.VAT),                       // uwaga: wewnetrzna nazwa to VAT
+    ulica: s(f.Ulica),
+    miasto: s(f.Miasto),
+    kod: s(f.Kodpocztowy),
+    status: s(f.Status1),
+    dataNDA: s(f.DataNDA),
+    opiekun: s(f.Creator),
+    tecsH: n(f.TECSh),
+    supportDay: n(f.SupportDay),
+    preSalesH: n(f.PreSalesh),
+    uwagi: s(f.Uwagi),
   };
 }
+
+export type Nota = {
+  id: string;
+  data: string;
+  osoba: string;
+  rodzaj: string;
+  tresc: string;
+  autor: string;
+  followUp: string;
+  followDone: boolean;
+};
+
+export function toNota(item: ListItem): Nota {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    data: s(f.Data),
+    osoba: s(f.Osoba),
+    rodzaj: s(f.Rodzaj1) || s(f.Type),
+    tresc: s(f.Totatka),               // uwaga: literowka w nazwie kolumny
+    autor: s(f.Creator),
+    followUp: s(f.Follow_up),
+    followDone: f.FollowUpStatus === true,
+  };
+}
+
+export type TecsRow = {
+  id: string;
+  nazwa: string;
+  wartosc: number;
+  etap: string;
+  poczatek: string;
+  koniec: string;
+  tp: boolean;
+  demo: boolean;
+  klient: string;
+};
+
+export function toTecs(item: ListItem): TecsRow {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    nazwa: s(f["Nazwaszansysprzeda_x017c_y_TECS"]),
+    wartosc: n(f["Warto_x015b__x0107_"]),
+    etap: s(f.Etap1),
+    poczatek: s(f["Pocz_x0105_tek_TECS"]),
+    koniec: s(f.Koniec_TECS),
+    tp: f.TP === true,
+    demo: f.Demo === true,
+    klient: s(f.Numer_klienta),
+  };
+}
+
+export type Szansa = {
+  id: string;
+  nazwa: string;
+  wartosc: number;
+  status: string;
+  typ: string;
+  otwarcie: string;
+};
+
+export function toSzansa(item: ListItem): Szansa {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    nazwa: s(f["Nazwaszansysprzeda_x017c_y"]),
+    wartosc: n(f["Warto_x015b__x0107_wEUR"]),
+    status: s(f.Status1),
+    typ: s(f.TypBiznesu),
+    otwarcie: s(f.Dataotwarcia),
+  };
+}
+
+export type Licencja = {
+  id: string;
+  nazwa: string;
+  ile: number;
+  koniec: string;
+  tp: boolean;
+  demo: boolean;
+  opps: string;
+  zamkniete: boolean;
+};
+
+/** Z listy Oferty_TECS - licencje powiazane z TECS. */
+export function toLicencjaTecs(item: ListItem): Licencja {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    nazwa: s(f.ProducID),
+    ile: n(f.Liczba_licencji),
+    koniec: s(f.Koniec_TECS),
+    tp: f.TP === true,
+    demo: f.Demo === true,
+    opps: s(f.TECSOppsIDoferta),
+    zamkniete: s(f.TECSclosed) !== "NIE",   // uwaga: tekst, nie boolean
+  };
+}
+
+/** Z listy StanPosiadania - licencje bez TECS. */
+export function toLicencjaBez(item: ListItem): Licencja {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    nazwa: s(f.NazwaLicencji),
+    ile: n(f.LiczbaLicencji),
+    koniec: s(f.KoniecTECS),
+    tp: false,
+    demo: false,
+    opps: "",
+    zamkniete: true,
+  };
+}
+
+export type Szkolenie = {
+  id: string;
+  nazwa: string;
+  data: string;
+  osoba: string;
+};
+
+export function toSzkolenie(item: ListItem): Szkolenie {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    nazwa: s(f.NazwaSzkolenia),
+    data: s(f.DataSzkolenia),
+    osoba: s(f.ImieNazwisko),
+  };
+}
+
+/** Ile dni do daty. Ujemne = po terminie. */
+export function dniDo(iso: string): number | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  const dzis = new Date();
+  dzis.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - dzis.getTime()) / 86400000);
+}
+
+/** Kolor paska i tekstu wedlug liczby dni do konca. */
+export function kolorTerminu(dni: number | null): string {
+  if (dni === null) return "#9CA3AF";
+  if (dni <= 30) return "#DC2626";
+  if (dni <= 90) return "#D97706";
+  return "#16A34A";
+}
+
+export const ETAP_KOLORY: Record<string, [string, string]> = {
+  "Przygotowanie oferty": ["#D97706", "#FEF3E2"],
+  "Oferta wysłana": ["#2F6FD6", "#E8F0FD"],
+  "Zamówione": ["#16A34A", "#E6F6EE"],
+  "Rezygnacja z TECS": ["#DC2626", "#FEE2E2"],
+  "Demo": ["#7C3AED", "#F1EAFE"],
+};
+
+export const ETAP_SKROTY: Record<string, string> = {
+  "Przygotowanie oferty": "W przygotowaniu",
+  "Oferta wysłana": "Wysłana",
+  "Rezygnacja z TECS": "Rezygnacja",
+};
