@@ -1,0 +1,851 @@
+/* ================================================================
+   MESco CRM - panel zadan Outlook
+   Kompletny arkusz. Zastepuje CALA dotychczasowa tresc
+   src/taskpane/taskpane.css (wszystkie doklejane kawalki).
+
+   Zasada: kolory statusow i etykiet zostaly bez zmian (sa czescia
+   systemu). Zmienione: kształty, typografia, odstepy, cienie, focus.
+   ================================================================ */
+
+/* ---------- 1. TOKENY ---------- */
+
+:root {
+  /* marka */
+  --crm-brand:        #3860B2;
+  --crm-brand-hover:  #2E4F96;
+  --crm-brand-tlo:    #EAEEF7;
+
+  /* statusy - NIE zmieniac, zgodne z systemem */
+  --crm-c-blad:       #A80000;
+  --crm-c-blad-hover: #8A0000;
+  --crm-c-blad-tlo:   #FDF3F4;
+  --crm-c-blad-linia: #F3D6D8;
+  --crm-c-ok:         #107C10;
+  --crm-c-ok-tlo:     #EEFAF0;
+  --crm-c-ok-linia:   #C6E8CD;
+  --crm-c-uwaga:      #854F0B;
+  --crm-c-uwaga-tlo:  #FAEEDA;
+  --crm-c-uwaga-lin:  #F0DFB8;
+
+  /* neutralne */
+  --crm-tekst:        #1B1A19;
+  --crm-tekst-2:      #5A5856;
+  --crm-tekst-3:      #8A8886;
+  --crm-tlo:          #FFFFFF;
+  --crm-tlo-2:        #F7F6F5;
+  --crm-tlo-3:        #F3F2F1;
+  --crm-linia:        #EAE8E6;
+  --crm-linia-mocna:  #CFCDCB;
+
+  /* typografia */
+  --crm-font: "Segoe UI Variable Text", "Segoe UI Variable Static Text",
+              "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+              "Helvetica Neue", sans-serif;
+  --crm-font-naglowek: "Segoe UI Variable Display",
+              "Segoe UI Variable Static Display", "Segoe UI Semibold",
+              var(--crm-font);
+
+  --crm-t-mikro: 10px;
+  --crm-t-mini:  11px;
+  --crm-t-maly:  12px;
+  --crm-t-baza:  13px;
+  --crm-t-duzy:  15px;
+
+  /* kształty - jedna spojna skala zamiast mieszanki 0/3/4/10px */
+  --crm-r-s:    6px;
+  --crm-r-m:    10px;
+  --crm-r-l:    14px;
+  --crm-r-pill: 999px;
+  --crm-szyna: 3px;
+
+  /* cienie - bardzo lekkie, panel jest waski */
+  --crm-cien-1: 0 1px 2px rgba(27, 26, 25, .06);
+  --crm-cien-2: 0 4px 12px rgba(27, 26, 25, .10), 0 1px 3px rgba(27, 26, 25, .06);
+  --crm-ring:   0 0 0 3px rgba(56, 96, 178, .18);
+
+  --crm-anim: 140ms cubic-bezier(.33, 0, .2, 1);
+}
+
+/* ---------- 2. PODSTAWA ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  /* wlasne tlo i kolor - inaczej przebija ciemny motyw Outlooka */
+  background: var(--crm-tlo);
+  color: var(--crm-tekst);
+  font-family: var(--crm-font);
+  font-size: var(--crm-t-baza);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* scaffold Office wstrzykuje display:flex w atrybucie style;
+   !important gasi to takze wtedy, gdy wroci po aktualizacji szablonu */
+#app-body { display: block !important; }
+
+#sideload-msg {
+  padding: 20px 16px;
+  font-size: var(--crm-t-maly);
+  color: var(--crm-tekst-2);
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* wszedzie ten sam, widoczny focus */
+:focus-visible {
+  outline: 2px solid var(--crm-brand);
+  outline-offset: 2px;
+  border-radius: var(--crm-r-s);
+}
+
+/* liczby w kolumnach nie skacza */
+.crm-id, .crm-czas, .crm-data, .crm-tecs, .crm-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 3. PASEK MARKI ---------- */
+
+.crm-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px 10px;
+}
+
+.crm-brand-mark {
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  border-radius: 8px;
+  background: var(--crm-brand);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: .6px;
+  flex: none;
+}
+
+.crm-brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex: none;
+  display: block;
+}
+
+.crm-brand-name {
+  font-family: var(--crm-font-naglowek);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -.15px;
+  color: var(--crm-tekst);
+}
+
+/* ---------- 4. NAWIGACJA (odklejony, zaokraglony pasek) ---------- */
+
+.crm-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 14px 12px;
+  padding: 9px 10px 9px 13px;
+  border-radius: var(--crm-r-l);
+  background: var(--crm-brand);
+  color: #fff;
+  box-shadow: var(--crm-cien-1);
+}
+
+.crm-nav-title {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
+  font-weight: 600;
+  letter-spacing: -.15px;
+  margin-right: auto;
+}
+
+.crm-nav-btn {
+  background: rgba(255, 255, 255, .16);
+  border: 0;
+  color: #fff;
+  border-radius: var(--crm-r-pill);
+  padding: 5px 12px;
+  font-size: var(--crm-t-mini);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--crm-anim), color var(--crm-anim);
+}
+.crm-nav-btn:hover { background: rgba(255, 255, 255, .30); }
+
+.crm-nav-btn.crm-nav-aktywny {
+  background: #fff;
+  color: var(--crm-brand);
+  font-weight: 600;
+}
+
+.crm-nav-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ---------- 5. KONTENER LISTY ---------- */
+
+#item-subject { padding: 0 14px 18px; }
+
+.crm-status {
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-3);
+  padding: 2px 0 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  font-weight: 600;
+}
+.crm-error { color: var(--crm-c-blad); text-transform: none; letter-spacing: 0; }
+
+.crm-pusto {
+  font-size: var(--crm-t-maly);
+  color: var(--crm-tekst-2);
+  padding: 20px 4px;
+  text-align: center;
+}
+
+/* ---------- 6. KARTA ZGLOSZENIA ---------- */
+
+/* zamiast sciętej karty z pasem po lewej: pelne zaokraglenie
+   + wewnetrzna szyna z zaokraglonymi koncami */
+.crm-card {
+  position: relative;
+  background: var(--crm-tlo);
+  border: 2px solid var(--crm-linia);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 10px 16px;
+  margin-bottom: 8px;
+  box-shadow: var(--crm-cien-1);
+  transition: box-shadow var(--crm-anim), border-color var(--crm-anim),
+              transform var(--crm-anim);
+}
+.crm-card::before {
+content: "";
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: var(--crm-szyna);
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand);
+  transition: top var(--crm-anim), bottom var(--crm-anim);
+}
+
+.crm-card-head { cursor: pointer; }
+.crm-card:has(.crm-card-head:hover) {
+  border-color: var(--crm-linia-mocna);
+  box-shadow: var(--crm-cien-2);
+  transform: translateY(-1px);
+}
+.crm-card-head:focus-visible { outline: 2px solid var(--crm-brand); outline-offset: 3px; }
+
+.crm-card.crm-open {
+  background: var(--crm-tlo);
+  border-color: var(--crm-linia-mocna);
+  box-shadow: var(--crm-cien-2);
+}
+.crm-card.crm-open::before { top: 6px; bottom: 6px; }
+
+.crm-card-top { display: flex; align-items: baseline; gap: 8px; }
+
+.crm-firma {
+  font-family: var(--crm-font-naglowek);
+  font-weight: 600;
+  font-size: var(--crm-t-baza);
+  letter-spacing: -.1px;
+  color: var(--crm-tekst);
+}
+
+.crm-id {
+  margin-left: auto;
+  font-size: var(--crm-t-mikro);
+  color: var(--crm-tekst-3);
+  white-space: nowrap;
+}
+
+.crm-row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.crm-osoba { font-size: var(--crm-t-maly); color: var(--crm-tekst); }
+.crm-czas { margin-left: auto; font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+
+.crm-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 3px; }
+
+.crm-opis {
+  font-size: var(--crm-t-mini);
+  line-height: 1.5;
+  color: var(--crm-tekst-2);
+  margin-top: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.crm-foot { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.crm-data { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+.crm-lock { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+
+/* kolor tla nadawany z JS - tu tylko kształt */
+.crm-chip {
+  margin-left: auto;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  letter-spacing: .2px;
+  color: #fff;
+  padding: 3px 9px;
+  border-radius: var(--crm-r-pill);
+  white-space: nowrap;
+}
+
+.crm-stale {
+  margin-top: 8px;
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
+  color: var(--crm-c-uwaga);
+  background: var(--crm-c-uwaga-tlo);
+  border-radius: var(--crm-r-s);
+  padding: 5px 8px;
+}
+
+/* ---------- 7. ROZWINIETA KARTA ---------- */
+
+.crm-detale {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--crm-linia);
+}
+
+.crm-meta {
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
+  line-height: 1.65;
+  margin-bottom: 10px;
+}
+
+.crm-label {
+  display: block;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--crm-tekst-3);
+  margin-bottom: 4px;
+}
+
+/* ---------- 8. POLA FORMULARZY ---------- */
+
+.crm-textarea,
+.crm-input,
+.crm-select,
+.crm-szukaj {
+  width: 100%;
+  font-size: var(--crm-t-maly);
+  padding: 8px 10px;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia-mocna);
+  border-radius: var(--crm-r-s);
+  transition: border-color var(--crm-anim), box-shadow var(--crm-anim);
+}
+.crm-textarea { resize: vertical; line-height: 1.5; }
+.crm-input,
+.crm-szukaj { margin-bottom: 10px; }
+.crm-select { background: var(--crm-tlo); color: var(--crm-tekst); }
+
+.crm-textarea:hover,
+.crm-input:hover,
+.crm-select:hover,
+.crm-szukaj:hover { border-color: var(--crm-tekst-3); }
+
+.crm-textarea:focus,
+.crm-input:focus,
+.crm-select:focus,
+.crm-szukaj:focus {
+  outline: none;
+  border-color: var(--crm-brand);
+  box-shadow: var(--crm-ring);
+}
+
+.crm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--crm-t-maly);
+  margin: 10px 0;
+  cursor: pointer;
+}
+.crm-check input { accent-color: var(--crm-brand); width: 15px; height: 15px; }
+.crm-check input:disabled + span { color: var(--crm-tekst-3); }
+
+.crm-filtry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.crm-filtry .crm-szukaj,
+.crm-filtry .crm-select { margin-bottom: 0; }
+
+/* ---------- 9. PRZYCISKI ---------- */
+
+.crm-akcje { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+
+.crm-btn {
+  background: var(--crm-brand);
+  color: #fff;
+  border: 0;
+  border-radius: var(--crm-r-s);
+  padding: 7px 14px;
+  font-size: var(--crm-t-maly);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--crm-cien-1);
+  transition: background var(--crm-anim), box-shadow var(--crm-anim),
+              transform var(--crm-anim);
+}
+.crm-btn:hover { background: var(--crm-brand-hover); box-shadow: var(--crm-cien-2); }
+.crm-btn:active { transform: translateY(1px); box-shadow: none; }
+.crm-btn:disabled {
+  background: var(--crm-tlo-3);
+  color: var(--crm-tekst-3);
+  box-shadow: none;
+  cursor: default;
+  transform: none;
+}
+
+.crm-btn-ostrz { background: var(--crm-c-blad); }
+.crm-btn-ostrz:hover { background: var(--crm-c-blad-hover); }
+
+.crm-btn-cichy {
+  background: var(--crm-tlo);
+  color: var(--crm-tekst-2);
+  border: 1px solid var(--crm-linia-mocna);
+  box-shadow: none;
+}
+.crm-btn-cichy:hover {
+  background: var(--crm-tlo-3);
+  color: var(--crm-tekst);
+  border-color: var(--crm-tekst-3);
+  box-shadow: none;
+}
+
+.crm-btn-nowe { background: var(--crm-brand); }
+
+.crm-powrot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 0;
+  color: var(--crm-brand);
+  font-size: var(--crm-t-maly);
+  font-weight: 500;
+  padding: 2px 0 10px;
+  cursor: pointer;
+}
+.crm-powrot:hover { color: var(--crm-brand-hover); text-decoration: underline; }
+
+/* ---------- 10. KOMUNIKATY ---------- */
+
+.crm-komunikat { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+.crm-ok { color: var(--crm-c-ok); }
+.crm-blad { color: var(--crm-c-blad); }
+
+.crm-ostrzezenie {
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: var(--crm-c-blad-tlo);
+  border: 1px solid var(--crm-c-blad-linia);
+  border-radius: var(--crm-r-s);
+  font-size: var(--crm-t-mini);
+  line-height: 1.5;
+  color: var(--crm-c-blad);
+}
+
+.crm-podpowiedz {
+  display: none;
+  font-size: var(--crm-t-mini);
+  line-height: 1.5;
+  color: var(--crm-c-uwaga);
+  background: var(--crm-c-uwaga-tlo);
+  border: 1px solid var(--crm-c-uwaga-lin);
+  border-radius: var(--crm-r-s);
+  padding: 7px 9px;
+  margin-bottom: 10px;
+}
+
+/* ---------- 11. PANEL "NOWE" ---------- */
+
+.crm-nowe {
+  background: var(--crm-brand-tlo);
+  border: 1px solid #D9E1F2;
+  border-radius: var(--crm-r-m);
+  padding: 11px 12px;
+  margin-bottom: 12px;
+}
+.crm-nowe-brak {
+  background: var(--crm-c-uwaga-tlo);
+  border-color: var(--crm-c-uwaga-lin);
+}
+.crm-nowe-ok {
+  background: var(--crm-c-ok-tlo);
+  border-color: var(--crm-c-ok-linia);
+}
+.crm-nowe-info {
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+.crm-nowe .crm-label { margin-top: 6px; }
+.crm-nowe .crm-select { margin-bottom: 10px; }
+
+/* ---------- 12. KARTA FIRMY ---------- */
+
+.crm-firma-card {
+  position: relative;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 11px 16px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  box-shadow: var(--crm-cien-1);
+  transition: box-shadow var(--crm-anim), border-color var(--crm-anim),
+              transform var(--crm-anim);
+}
+.crm-firma-card::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: var(--crm-szyna);
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand);
+  transition: top var(--crm-anim), bottom var(--crm-anim);
+}
+.crm-firma-card:hover {
+  border-color: var(--crm-linia-mocna);
+  box-shadow: var(--crm-cien-2);
+  transform: translateY(-1px);
+}
+.crm-firma-card:focus-visible { outline: 2px solid var(--crm-brand); outline-offset: 3px; }
+
+.crm-firma-top { display: flex; align-items: baseline; gap: 8px; }
+.crm-firma-nazwa {
+  font-family: var(--crm-font-naglowek);
+  font-weight: 600;
+  font-size: var(--crm-t-baza);
+  letter-spacing: -.1px;
+  color: var(--crm-tekst);
+}
+
+.crm-tecs {
+  margin-left: auto;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand-hover);
+  border-radius: var(--crm-r-pill);
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.crm-adres { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 4px; line-height: 1.55; }
+.crm-firma-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 5px; }
+
+/* ---------- 13. PODNAWIGACJA (segmented control) ---------- */
+
+.crm-podnav {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 12px;
+  background: var(--crm-tlo-2);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-pill);
+}
+.crm-podnav-btn {
+  flex: 1;
+  background: none;
+  border: 0;
+  border-radius: var(--crm-r-pill);
+  padding: 6px 6px;
+  font-size: var(--crm-t-maly);
+  font-weight: 500;
+  color: var(--crm-tekst-2);
+  cursor: pointer;
+  transition: background var(--crm-anim), color var(--crm-anim);
+}
+.crm-podnav-btn:hover { color: var(--crm-tekst); background: rgba(27, 26, 25, .04); }
+
+.crm-podnav-aktywny,
+.crm-podnav-btn.crm-podnav-aktywny:hover {
+  background: var(--crm-tlo);
+  color: var(--crm-brand);
+  font-weight: 600;
+  box-shadow: var(--crm-cien-1);
+}
+
+/* ---------- 14. KARTA KONTAKTU ---------- */
+
+.crm-kontakt-card {
+  position: relative;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 11px 16px;
+  margin-bottom: 8px;
+  box-shadow: var(--crm-cien-1);
+}
+.crm-kontakt-card::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand);
+}
+
+.crm-kontakt-linia {
+  display: inline-block;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-brand);
+  margin-top: 4px;
+  text-decoration: none;
+}
+.crm-kontakt-linia:hover { color: var(--crm-brand-hover); text-decoration: underline; }
+.crm-tel:hover { text-decoration: underline; }
+
+.crm-nieaktywny {
+  margin-left: auto;
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
+  color: var(--crm-tekst-3);
+  background: var(--crm-tlo-2);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-pill);
+  padding: 2px 8px;
+}
+
+/* ---------- 15. KOPIOWANIE ---------- */
+
+.crm-kopiuj { cursor: pointer; position: relative; }
+.crm-kopiuj:hover { text-decoration: underline; }
+
+.crm-blysk {
+  position: absolute;
+  right: 0;
+  top: -20px;
+  background: var(--crm-tekst);
+  color: #fff;
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: var(--crm-r-pill);
+  white-space: nowrap;
+  box-shadow: var(--crm-cien-2);
+  z-index: 5;
+  animation: crm-blysk-in 160ms cubic-bezier(.33, 0, .2, 1);
+}
+@keyframes crm-blysk-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- 16. PREFERENCJE UZYTKOWNIKA ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+  .crm-card:has(.crm-card-head:hover),
+  .crm-firma-card:hover { transform: none; }
+}
+
+/* Panel bywa wezszy niz 320 px przy podzielonym oknie Outlooka */
+@media (max-width: 300px) {
+  .crm-brand   { padding: 10px 10px 8px; }
+  .crm-nav     { margin: 0 10px 10px; padding: 8px 8px 8px 11px; }
+  #item-subject { padding: 0 10px 16px; }
+  .crm-podnav-btn { font-size: var(--crm-t-mini); padding: 6px 2px; }
+}
+/* ================================================================
+   17. RUCH - wariant "skupienie"
+   Dopisz na koncu src/taskpane/taskpane.css.
+   Zastepuje poprzedni plik z animacjami (kaskada) w calosci.
+
+   Zasada: ruch niesie hierarchie. Kiedy uzytkownik cos otwiera,
+   otoczenie sie wycofuje. Nic nie rusza sie samo z siebie.
+   ================================================================ */
+
+:root {
+  --crm-e-skup:  260ms cubic-bezier(.16, 1, .3, 1);
+  --crm-e-szybko: 130ms cubic-bezier(.33, 0, .2, 1);
+}
+
+/* ---------- 17a. wejscie widoku ---------- */
+
+/* jedno wspolne pojawienie sie, bez kaskady - widok wynurza sie
+   w calosci, a nie sklada z kawalkow */
+@keyframes crm-wynurz {
+  from { opacity: 0; transform: scale(.99); }
+  to   { opacity: 1; transform: none; }
+}
+
+.crm-card,
+.crm-firma-card,
+.crm-kontakt-card {
+  animation: crm-wynurz 180ms cubic-bezier(.16, 1, .3, 1) backwards;
+}
+
+/* ---------- 17b. skupienie na rozwinietej karcie ---------- */
+
+.crm-card {
+  transition: opacity var(--crm-e-skup), transform var(--crm-e-skup),
+              box-shadow var(--crm-e-skup), border-color var(--crm-e-szybko);
+}
+
+/* dziala bez JS - kontener sam widzi, ze ktoras karta jest otwarta */
+#item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open) {
+  opacity: .42;
+  transform: scale(.97);
+  box-shadow: none;
+}
+
+#item-subject:has(.crm-card.crm-open) .crm-card.crm-open {
+  transform: none;
+  box-shadow: 0 6px 18px rgba(27, 26, 25, .13);
+}
+
+/* przygaszone karty nie reaguja na hover, ale nadal sa klikalne */
+#item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open):hover {
+  opacity: .72;
+}
+
+/* hover bez podnoszenia - unoszenie kolidowaloby ze skalowaniem;
+   nadpisuje transform z sekcji 6 */
+.crm-card:has(.crm-card-head:hover) {
+  transform: none;
+}
+
+/* ---------- 17c. odslanianie szczegolow ---------- */
+
+@keyframes crm-odslon {
+  from { clip-path: inset(0 0 100% 0); opacity: .3; }
+  to   { clip-path: inset(0 0 0 0);    opacity: 1; }
+}
+
+.crm-detale {
+  animation: crm-odslon 200ms cubic-bezier(.16, 1, .3, 1) backwards;
+}
+
+/* ---------- 17d. karta firmy i kontaktu ---------- */
+
+.crm-firma-card {
+  transition: transform var(--crm-e-szybko), box-shadow var(--crm-e-skup),
+              border-color var(--crm-e-szybko);
+}
+/* nadpisuje unoszenie z sekcji 12 - w tym jezyku wejscie w firme
+   to przyblizenie, nie podskok */
+.crm-firma-card:hover { transform: none; }
+.crm-firma-card:active { transform: scale(.985); }
+
+.crm-kontakt-card { transition: border-color var(--crm-e-szybko); }
+.crm-kontakt-card:hover { border-color: var(--crm-linia-mocna); }
+
+/* ---------- 17e. ladowanie ---------- */
+
+/* dodaj klase crm-laduje na #item-subject przed await na Graph,
+   zdejmij po odpowiedzi - lista wycofuje sie tym samym ruchem,
+   ktorym wycofuje sie przy rozwinieciu karty */
+#item-subject.crm-laduje .crm-card,
+#item-subject.crm-laduje .crm-firma-card,
+#item-subject.crm-laduje .crm-kontakt-card {
+  opacity: .38;
+  transform: scale(.985);
+  pointer-events: none;
+  transition: opacity var(--crm-e-skup), transform var(--crm-e-skup);
+}
+
+.crm-status.crm-laduje { animation: crm-oddech 1.3s ease-in-out infinite; }
+@keyframes crm-oddech {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .45; }
+}
+
+/* ---------- 17f. zapis ---------- */
+
+/* dodaj crm-zapisano na .crm-card po udanym PATCH i zdejmij po 700 ms:
+   karta na moment podchodzi blizej, potem wraca */
+@keyframes crm-potwierdz {
+  0%   { transform: none;        box-shadow: 0 0 0 0 rgba(16, 124, 16, .40); }
+  35%  { transform: scale(1.012); box-shadow: 0 0 0 5px rgba(16, 124, 16, .22); }
+  100% { transform: none;        box-shadow: 0 0 0 10px rgba(16, 124, 16, 0); }
+}
+#item-subject:has(.crm-card.crm-open) .crm-card.crm-zapisano,
+.crm-card.crm-zapisano {
+  animation: crm-potwierdz 700ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.crm-komunikat.crm-ok,
+.crm-komunikat.crm-blad {
+  animation: crm-wynurz 160ms ease-out both;
+}
+
+/* ---------- 17g. blad walidacji ---------- */
+
+/* bez szarpania: ostrzezenie odslania sie tym samym ruchem co
+   szczegoly, a karta dostaje czerwony pierscien */
+.crm-ostrzezenie {
+  animation: crm-odslon 180ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+@keyframes crm-uwaga {
+  0%   { box-shadow: 0 0 0 0 rgba(168, 0, 0, .35); }
+  100% { box-shadow: 0 0 0 9px rgba(168, 0, 0, 0); }
+}
+.crm-card.crm-blad-walidacji { animation: crm-uwaga 620ms ease-out; }
+
+/* ---------- 17h. drobne ---------- */
+
+.crm-btn { transition: background var(--crm-e-szybko), box-shadow var(--crm-e-szybko),
+                       transform 80ms cubic-bezier(.33, 0, .2, 1); }
+.crm-btn:active { transform: scale(.97); }
+
+.crm-nav-btn:active,
+.crm-podnav-btn:active { transform: scale(.97); }
+
+.crm-blysk { animation: crm-wynurz 140ms cubic-bezier(.16, 1, .3, 1); }
+
+/* ---------- 17i. uzupelnienie sekcji 16 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-card, .crm-firma-card, .crm-kontakt-card,
+  .crm-detale, .crm-ostrzezenie, .crm-komunikat,
+  .crm-blysk, .crm-status.crm-laduje {
+    animation: none !important;
+  }
+  .crm-card.crm-zapisano, .crm-card.crm-blad-walidacji { animation: none !important; }
+  .crm-detale { clip-path: none; opacity: 1; }
+  /* przygaszenie zostaje - to informacja, nie dekoracja - ale bez skalowania */
+  #item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open),
+  #item-subject.crm-laduje .crm-card { transform: none !important; }
+}
