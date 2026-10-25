@@ -19,6 +19,7 @@ export type Ticket = {
   modified: string;      // ISO - do wykrywania "utknietych" zgloszen
   companyId: string;
   contactId: string;
+  etag: string;          // @odata.etag - optymistyczna blokada przy zapisie
 };
 
 const str = (v: unknown) => (v == null ? "" : String(v));
@@ -42,6 +43,7 @@ export function toTicket(item: ListItem): Ticket {
     modified: str(f.Modified),
     companyId: str(f.IdentyfikatorCompanies),
     contactId: str(f.IdentyfikatorContact),
+    etag: str(f["@odata.etag"] ?? (item as any)["@odata.etag"]),
   };
 }
 
