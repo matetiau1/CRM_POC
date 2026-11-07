@@ -1247,3 +1247,82 @@ content: "";
   flex: 0 0 auto;
   white-space: nowrap;
 }
+
+/* ---------- 23. DOLNY PASEK NAWIGACJI (ikony jak mainbar w Power Apps) ---------- */
+.crm-dol {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--crm-tlo);
+  border-top: 1px solid var(--crm-linia);
+  box-shadow: 0 -2px 8px rgba(27, 26, 25, .06);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.crm-dol-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 2px 7px;
+  background: none;
+  border: 0;
+  color: var(--crm-tekst-3);
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--crm-e-szybko), background var(--crm-e-szybko);
+}
+.crm-dol-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.crm-dol-btn span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-dol-btn:hover { color: var(--crm-tekst); background: var(--crm-tlo-2); }
+.crm-dol-btn:focus-visible { outline-offset: -3px; }
+
+/* aktywny widok: kolor marki + belka u gory */
+.crm-dol-btn.crm-dol-akt { color: var(--crm-brand); }
+.crm-dol-btn.crm-dol-akt::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--crm-brand);
+}
+
+/* miejsce na pasek - tresc nie chowa sie pod nim */
+#app-body #item-subject { padding-bottom: 76px; }
+
+/* firma kontaktu w wyszukiwarce kontaktow */
+.crm-kontakt-firma {
+  display: inline-block;
+  background: none;
+  border: 0;
+  padding: 2px 0 0;
+  font-size: var(--crm-t-mini);
+  font-weight: 600;
+  color: var(--crm-brand);
+  cursor: pointer;
+}
+.crm-kontakt-firma:hover { color: var(--crm-brand-hover); text-decoration: underline; }

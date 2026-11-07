@@ -4,7 +4,7 @@ import {
   getListItems, getTicketsByField, updateTicketFields, getCompanies2, getOpiekunowie,
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
-  getTicketByNumber, getAllCompanies, getChoiceOptions,
+  getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
 } from "./graphService";
 import type { ListItem } from "./graphService";
 import {
@@ -13,7 +13,7 @@ import {
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
   ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid,
 } from "./crm";
-import { SUPPORT_MAILBOX } from "./authConfig";
+import { SUPPORT_MAILBOX, POWERAPPS_URL } from "./authConfig";
 
 // ---------------------------------------------------------------- start
 
@@ -26,6 +26,8 @@ Office.onReady((info) => {
   document.getElementById("run")!.onclick = () => void odswiez();
   document.getElementById("nav-tickets")!.onclick = () => void pokazZgloszenia();
   document.getElementById("nav-companies")!.onclick = () => void pokazFirmy();
+  document.getElementById("nav-contacts")!.onclick = () => void pokazKontakty();
+  document.getElementById("nav-crm")!.onclick = () => window.open(POWERAPPS_URL, "_blank");
 
   Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, () => {
     if (widok === "zgloszenia") void pokazZgloszenia();
@@ -36,12 +38,13 @@ Office.onReady((info) => {
 
 // ---------------------------------------------------------------- stan
 
-type Widok = "zgloszenia" | "firmy" | "firma";
+type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty";
 let widok: Widok = "zgloszenia";
 let ostatniaFirma: Company | null = null;
 
 let zakresZgloszen: "mail" | "firma" | "wszystkie" = "mail";
 let opiekunZgloszen = "";
+let frazaKontaktow = "";
 
 type Zakladka =
   | "Kontakty" | "Supporty" | "Notatki" | "TECS"
@@ -77,10 +80,12 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-function ustawNaglowek(tytul: string, aktywny: "nav-tickets" | "nav-companies") {
+type NavId = "nav-tickets" | "nav-companies" | "nav-contacts";
+
+function ustawNaglowek(tytul: string, aktywny: NavId) {
   document.getElementById("nav-title")!.textContent = tytul;
-  ["nav-tickets", "nav-companies"].forEach((id) =>
-    document.getElementById(id)!.classList.toggle("crm-nav-aktywny", id === aktywny)
+  (["nav-tickets", "nav-companies", "nav-contacts"] as NavId[]).forEach((id) =>
+    document.getElementById(id)!.classList.toggle("crm-dol-akt", id === aktywny)
   );
 }
 
@@ -2076,12 +2081,108 @@ function zakladkaUwagi(box: HTMLElement, s: HTMLElement) {
   box.appendChild(el("div", t ? "crm-uwagi" : "crm-pusto", t || "Brak uwag dla tej firmy."));
 }
 
+// ---------------------------------------------------------------- kontakty (cala baza)
+
+/** Wyszukiwarka po wszystkich kontaktach - z przejsciem do firmy. */
+async function pokazKontakty() {
+  widok = "kontakty";
+  ustawNaglowek("Kontakty", "nav-contacts");
+  root().innerHTML = "";
+  // firmaPelna dotyczy ostatnio otwartej firmy - formularz notatki nie moze jej uzyc
+  firmaPelna = null;
+  tecsAlert = null;
+
+  const szukaj = document.createElement("input");
+  szukaj.type = "search";
+  szukaj.className = "crm-szukaj";
+  szukaj.placeholder = "szukaj: nazwisko, mail, telefon, firma";
+  szukaj.value = frazaKontaktow;
+  root().appendChild(szukaj);
+
+  const s = status("Pobieranie kontaktów...");
+  const lista = el("div");
+  root().appendChild(lista);
+
+  let wszyscy: Contact[];
+  try {
+    wszyscy = (await getAllContacts())
+      .map(toContact)
+      .sort((a, b) =>
+        Number(b.aktywny) - Number(a.aktywny) || a.imieNazwisko.localeCompare(b.imieNazwisko, "pl")
+      );
+  } catch (e: any) {
+    console.error(e);
+    s.textContent = `Błąd: ${e?.message ?? e}`;
+    s.classList.add("crm-error");
+    return;
+  }
+
+  const LIMIT = 50;
+
+  const rysuj = () => {
+    const q = szukaj.value.trim().toLowerCase();
+    frazaKontaktow = szukaj.value;
+    lista.innerHTML = "";
+
+    if (q.length < 2) {
+      s.textContent = `Kontakty w bazie — ${wszyscy.length}`;
+      pusto(lista, "Wpisz co najmniej 2 znaki.");
+      return;
+    }
+
+    const trafienia = wszyscy.filter((k) =>
+      [k.imieNazwisko, k.email, k.telefon, k.stanowisko, k.firmaId]
+        .filter(Boolean)
+        .some((p) => p.toLowerCase().includes(q))
+    );
+
+    s.textContent = trafienia.length > LIMIT
+      ? `Znaleziono ${trafienia.length} — pokazuję ${LIMIT}, zawęź wyszukiwanie`
+      : `Znaleziono — ${trafienia.length}`;
+
+    if (!trafienia.length) {
+      pusto(lista, `Nic nie pasuje do „${szukaj.value.trim()}”.`);
+      return;
+    }
+
+    trafienia.slice(0, LIMIT).forEach((k) => {
+      const c = { guid: k.companyGuid, nazwa: k.firmaId } as Company;
+      const card = kartaKontaktu(k, c);
+
+      // firma kontaktu - klik prowadzi do pelnego widoku firmy
+      if (k.companyGuid) {
+        const doFirmy = el("button", "crm-kontakt-firma", `↗ ${k.firmaId || "firma"}`) as HTMLButtonElement;
+        doFirmy.title = "Otwórz firmę";
+        doFirmy.onclick = () => {
+          zakladkaFirmy = "Kontakty";
+          void pokazFirma(c);
+        };
+        card.insertBefore(doFirmy, card.children[1] ?? null);
+      }
+      lista.appendChild(card);
+    });
+  };
+
+  let timer: any;
+  szukaj.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(rysuj, 150);
+  };
+
+  rysuj();
+  szukaj.focus();
+}
+
 // ---------------------------------------------------------------- odswiezanie
 
 async function odswiez() {
   if (widok === "firmy") {
     wyczyscCacheFirm();
     return pokazFirmy();
+  }
+  if (widok === "kontakty") {
+    wyczyscCacheKontaktow();
+    return pokazKontakty();
   }
   if (widok === "firma" && ostatniaFirma) {
     firmaPelna = null; // wymus ponowne pobranie danych firmy

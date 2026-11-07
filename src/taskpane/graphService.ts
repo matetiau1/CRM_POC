@@ -387,6 +387,54 @@ export async function getAllCompanies(force = false): Promise<ListItem[]> {
   return zebrane;
 }
 
+/** Wszystkie kontakty, pobrane raz na sesje. Tylko pola potrzebne do wyszukiwarki. */
+let kontaktyCache: ListItem[] | null = null;
+
+const POLA_KONTAKTU = [
+  "id", "ContactGUID", "Imi_x0119_", "Nazwisko", "Imi_x0119__x0020_i_x0020_nazwisk",
+  "Email", "Phone", "Stanowisko", "FirmaID", "IdentyfikatorCompanies", "Status",
+].join(",");
+
+export async function getAllContacts(force = false): Promise<ListItem[]> {
+  if (kontaktyCache && !force) return kontaktyCache;
+
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const listId = await getListId(siteId, "Contacts", token);
+
+  const zebrane: ListItem[] = [];
+  let url: string | null =
+    `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields(select=${POLA_KONTAKTU})&$top=999`;
+
+  // zabezpieczenie przed pętlą, gdyby serwer zwracał wciąż ten sam link
+  let strony = 0;
+
+  while (url && strony < 50) {
+    const r: Response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly",
+      },
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      throw new Error(`Graph ${r.status}: ${body.slice(0, 300)}`);
+    }
+    const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+    zebrane.push(...dane.value);
+    url = dane["@odata.nextLink"] ?? null;
+    strony++;
+  }
+
+  kontaktyCache = zebrane;
+  return zebrane;
+}
+
+/** Do przycisku odświeżania - wymusza ponowne pobranie kontaktów. */
+export function wyczyscCacheKontaktow(): void {
+  kontaktyCache = null;
+}
+
 /** Filtrowanie i sortowanie lokalne - działa na pełnym zbiorze, bez limitu 200. */
 export async function getCompanies2(
   search = "",
