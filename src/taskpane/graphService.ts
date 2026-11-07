@@ -202,6 +202,20 @@ export async function getListColumns(listName = SP_LIST_NAME): Promise<ColumnDef
   );
   return res.value;
 }
+/** Opcje kolumny typu choice - z definicji kolumny, nie z danych. Pobierane raz na sesje. */
+const cacheWyborow = new Map<string, string[]>();
+
+export async function getChoiceOptions(listName: string, column: string): Promise<string[]> {
+  const klucz = `${listName}/${column}`;
+  const z = cacheWyborow.get(klucz);
+  if (z) return z;
+
+  const kol = (await getListColumns(listName)).find((c) => c.name === column);
+  const lista = (((kol as any)?.choice?.choices ?? []) as string[]).filter(Boolean);
+  cacheWyborow.set(klucz, lista);
+  return lista;
+}
+
 /**
  * Zgloszenia filtrowane po kolumnie. Naglowek Prefer pozwala pytac
  * po kolumnach nieindeksowanych - inaczej Graph odrzuca zapytanie.

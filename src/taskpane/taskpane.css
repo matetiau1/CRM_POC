@@ -150,18 +150,16 @@ button, input, select, textarea {
   color: var(--crm-tekst);
 }
 
-/* ---------- 4. NAWIGACJA (odklejony, zaokraglony pasek) ---------- */
+/* ---------- 4. NAWIGACJA (pasek na pelna szerokosc panelu) ---------- */
 
 .crm-nav {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 14px 12px;
-  padding: 9px 10px 9px 13px;
-  border-radius: var(--crm-r-l);
+  margin: 0 0 12px;
+  padding: 9px 14px;
   background: var(--crm-brand);
   color: #fff;
-  box-shadow: var(--crm-cien-1);
 }
 
 .crm-nav-title {
@@ -683,7 +681,7 @@ content: "";
 /* Panel bywa wezszy niz 320 px przy podzielonym oknie Outlooka */
 @media (max-width: 300px) {
   .crm-brand   { padding: 10px 10px 8px; }
-  .crm-nav     { margin: 0 10px 10px; padding: 8px 8px 8px 11px; }
+  .crm-nav     { margin: 0 0 10px; padding: 8px 10px; }
   #item-subject { padding: 0 10px 16px; }
   .crm-podnav-btn { font-size: var(--crm-t-mini); padding: 6px 2px; }
 }
@@ -924,33 +922,28 @@ content: "";
   margin-top: 2px;
 }
 
-/* ---------- zakladki przewijane ---------- */
+/* ---------- zakladki: siatka 4x2, rowne kolumny ---------- */
 .crm-zakladki {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   margin-top: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
   padding-bottom: 6px;
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
-}
-.crm-zakladki::-webkit-scrollbar { height: 4px; }
-.crm-zakladki::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
-  border-radius: 2px;
 }
 .crm-zakladka {
-  flex: 0 0 auto;
+  min-width: 0;
   background: #fff;
   border: 1px solid #E5E7EB;
   border-radius: 14px;
-  padding: 5px 12px;
+  padding: 5px 4px;
   font-family: inherit;
   font-size: 11px;
   color: #374151;
   cursor: pointer;
+  text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .crm-zakladka:hover { background: #F3F4F6; }
 .crm-zakladka-akt {
@@ -1238,3 +1231,19 @@ content: "";
 .crm-watek .crm-label { margin-top: 8px; }
 .crm-watek .crm-input,
 .crm-watek .crm-textarea { margin-bottom: 0; }
+/* ---------- 22. PASEK KONTAKTOW (szukajka + "+ kontakt" w jednym rzedzie) ---------- */
+.crm-kontakt-pasek {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin-bottom: 10px;
+}
+.crm-kontakt-pasek .crm-szukaj {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.crm-kontakt-pasek .crm-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}

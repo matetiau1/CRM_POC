@@ -18,3 +18,6 @@ export const graphScopes = ["User.Read", "Sites.ReadWrite.All"];
 export const SP_HOST = "mescocompl.sharepoint.com";
 export const SP_SITE_PATH = "/sites/CRMSystemPOC";
 export const SP_LIST_NAME = "Support";
+
+// Skrzynka wspoldzielona, na ktorej dziala przeplyw zgloszen
+export const SUPPORT_MAILBOX = "support@mesco.com.pl";

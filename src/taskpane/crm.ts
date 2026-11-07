@@ -157,6 +157,7 @@ export type CompanyFull = {
   supportDay: number;
   preSalesH: number;
   uwagi: string;
+  domena: string;      // DomenA - sama domena, do dopasowania nadawcy
 };
 
 export function toCompanyFull(item: ListItem): CompanyFull {
@@ -177,7 +178,36 @@ export function toCompanyFull(item: ListItem): CompanyFull {
     supportDay: n(f.SupportDay),
     preSalesH: n(f.PreSalesh),
     uwagi: s(f.Uwagi),
+    domena: s(f.DomenA).trim().toLowerCase(),
   };
+}
+
+/** Imie i nazwisko z nazwy wyswietlanej nadawcy ("Jan Kowalski" albo "Kowalski, Jan"). */
+export function rozbijNazwe(nazwa: string): { imie: string; nazwisko: string } {
+  let n = (nazwa || "").replace(/["']/g, "").trim();
+  if (n.includes("@")) n = ""; // brak nazwy - Outlook podstawia adres
+  if (n.includes(",")) {
+    const [naz, im] = n.split(",").map((x) => x.trim());
+    return { imie: im ?? "", nazwisko: naz ?? "" };
+  }
+  const cz = n.split(/\s+/).filter(Boolean);
+  return { imie: cz[0] ?? "", nazwisko: cz.slice(1).join(" ") };
+}
+
+/** Jak w Power Apps: imie zakonczone na "a" -> K, inaczej M. */
+export function plecZImienia(imie: string): "K" | "M" {
+  return imie.trim().toLowerCase().endsWith("a") ? "K" : "M";
+}
+
+/** Odpowiednik GUID() z Power Apps - male litery, z myslnikami. */
+export function nowyGuid(): string {
+  const c = crypto as any;
+  if (typeof c.randomUUID === "function") return c.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 export type Nota = {

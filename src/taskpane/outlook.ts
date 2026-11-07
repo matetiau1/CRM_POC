@@ -4,14 +4,16 @@ import {
   getListItems, getTicketsByField, updateTicketFields, getCompanies2, getOpiekunowie,
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
-  getTicketByNumber
+  getTicketByNumber, getAllCompanies, getChoiceOptions,
 } from "./graphService";
+import type { ListItem } from "./graphService";
 import {
   toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, ticketIdZTematu, Ticket, Company,
   toContact, Contact, toCompanyFull, CompanyFull, toNota, toTecs, toSzansa,
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
-  ETAP_KOLORY, ETAP_SKROTY,
+  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid,
 } from "./crm";
+import { SUPPORT_MAILBOX } from "./authConfig";
 
 // ---------------------------------------------------------------- start
 
@@ -191,6 +193,27 @@ function mailIdRest(item: Office.MessageRead): string {
   } catch {
     return item.itemId ?? "";
   }
+}
+
+/**
+ * Czy otwarta wiadomosc lezy w skrzynce supportowej.
+ * Skrzynka dodana jako osobne konto: userProfile zwraca jej adres.
+ * Skrzynka otwarta jako folder wspoldzielony: adres daje getSharedPropertiesAsync.
+ */
+async function czySkrzynkaSupportu(item: Office.MessageRead): Promise<boolean> {
+  const cel = SUPPORT_MAILBOX.toLowerCase();
+  if ((Office.context.mailbox.userProfile.emailAddress ?? "").toLowerCase() === cel) return true;
+
+  const it = item as any;
+  if (typeof it.getSharedPropertiesAsync !== "function") return false;
+  return new Promise((resolve) => {
+    it.getSharedPropertiesAsync((r: Office.AsyncResult<Office.SharedProperties>) => {
+      resolve(
+        r.status === Office.AsyncResultStatus.Succeeded &&
+          (r.value?.owner ?? "").toLowerCase() === cel
+      );
+    });
+  });
 }
 
 // ---------------------------------------------------------------- zgloszenia
@@ -386,14 +409,32 @@ function szczegoly(t: Ticket, poZapisie: () => void): HTMLElement {
     }
   };
 
-  zapisz.onclick = () => {
+  zapisz.onclick = async () => {
+    const uwagi: string[] = [];
+
+    // cudze zgloszenie - zapis zmienia czas i opis komus innemu
+    let moje = true;
+    try {
+      const ja = (await getMojMail()).toLowerCase();
+      moje = !t.opiekunMail || t.opiekunMail === ja;
+    } catch {
+      moje = true; // nie wiemy - nie strasz bez powodu
+    }
+    if (!moje) {
+      uwagi.push(`To nie jest Twoje zgłoszenie — opiekunem jest ${t.opiekun || t.opiekunMail}.`);
+    }
+
     const stary = t.opis.trim();
     const nowy = ta.value.trim();
     if (stary.length > 0 && !nowy.includes(stary)) {
-      ostrzezenie.innerHTML = "";
-      ostrzezenie.appendChild(el("div", undefined, nowy
+      uwagi.push(nowy
         ? "Zmieniasz istniejący opis — poprzedni zniknie bez śladu."
-        : "Kasujesz cały opis."));
+        : "Kasujesz cały opis.");
+    }
+
+    if (uwagi.length) {
+      ostrzezenie.innerHTML = "";
+      uwagi.forEach((u) => ostrzezenie.appendChild(el("div", undefined, u)));
       const potwierdz = el("button", "crm-btn crm-btn-ostrz", "Zapisz mimo to") as HTMLButtonElement;
       const anuluj = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
       potwierdz.onclick = () => void wykonajZapis();
@@ -434,8 +475,7 @@ async function panelNowego() {
 
   if (!kontakt) {
     box.className = "crm-nowe crm-nowe-brak";
-    box.appendChild(el("div", "crm-nowe-info",
-      `${nadawca} nie figuruje w kontaktach — dodaj go w CRM, żeby założyć zgłoszenie.`));
+    await panelNowegoKontaktu(box, nadawca, item.from?.displayName ?? "");
     return;
   }
 
@@ -490,7 +530,20 @@ async function panelNowego() {
   rzad.appendChild(komunikat);
   box.appendChild(rzad);
 
-  btn.onclick = async () => {
+  // zgloszenie z wlasnej skrzynki omija przeplyw skrzynki supportowej
+  let zSupportu = true;
+  try {
+    zSupportu = await czySkrzynkaSupportu(item);
+  } catch {
+    zSupportu = true; // nie wiemy - nie strasz bez powodu
+  }
+
+  const ostrzezenie = el("div", "crm-ostrzezenie");
+  ostrzezenie.style.display = "none";
+  box.appendChild(ostrzezenie);
+
+  /** reczne = bez MailID i MailSubject, jak zgloszenie z kontaktu firmy */
+  const zaloz = async (reczne = false) => {
     const wybrany = serwisanci[Number(wybor.value)];
     if (!wybrany) {
       komunikat.textContent = "Wybierz opiekuna supportu";
@@ -498,6 +551,7 @@ async function panelNowego() {
       return;
     }
 
+    ostrzezenie.style.display = "none";
     btn.disabled = true;
     wybor.disabled = true;
     komunikat.textContent = "Zakładanie...";
@@ -516,11 +570,14 @@ async function panelNowego() {
       Status: false,
       IdentyfikatorContact: f.ContactGUID ?? "",
       IdentyfikatorCompanies: f.IdentyfikatorCompanies ?? "",
-      MailSubject: temat,
-      MailID: mailIdRest(item),
       MailCreator: wybrany.mail,
       Dodatkowy_opiekun: wybrany.nazwa,
     };
+    // przeplyw rozpoznaje zgloszenie z maila po MailID - reczne idzie sciezka bez maili
+    if (!reczne) {
+      pola["MailSubject"] = temat;
+      pola["MailID"] = mailIdRest(item);
+    }
 
     if (wybrany.siteId !== null) {
       pola["Opiekun_supportuLookupId"] = String(wybrany.siteId);
@@ -532,7 +589,8 @@ async function panelNowego() {
       box.className = "crm-nowe crm-nowe-ok";
       box.innerHTML = "";
       box.appendChild(el("div", "crm-nowe-info",
-        `Zgłoszenie założone dla ${wybrany.nazwa}. Numer nadawany przez przepływ — pojawi się w ciągu kilku minut.`));
+        `${reczne ? "Zgłoszenie ręczne założone" : "Zgłoszenie założone"} dla ${wybrany.nazwa}. ` +
+        "Numer nadawany przez przepływ — pojawi się w ciągu kilku minut."));
       const odsw = el("button", "crm-btn crm-btn-cichy", "Odśwież listę") as HTMLButtonElement;
       odsw.onclick = () => void pokazZgloszenia();
       box.appendChild(odsw);
@@ -543,7 +601,263 @@ async function panelNowego() {
       wybor.disabled = false;
     }
   };
+
+  btn.onclick = () => {
+    if (zSupportu) return void zaloz();
+
+    ostrzezenie.innerHTML = "";
+    ostrzezenie.appendChild(el("div", undefined,
+      `Dodajesz support ze swojej skrzynki dla ${osoba || nadawca}, czy jesteś pewny? Odbiorca nie dostanie ` +
+      "powiadomienia o zgłoszeniu, a wątek będzie poza skrzynką supportową."));
+    ostrzezenie.appendChild(el("div", undefined,
+      "Możesz założyć zgłoszenie ręczne — tak jak z poziomu firmy, bez powiązania z tym mailem."));
+    const potwierdz = el("button", "crm-btn crm-btn-ostrz", "Utwórz support") as HTMLButtonElement;
+    const anuluj = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    potwierdz.onclick = () => void zaloz(true);
+    anuluj.onclick = () => { ostrzezenie.style.display = "none"; };
+    const rzadO = el("div", "crm-akcje");
+    rzadO.appendChild(potwierdz);
+    rzadO.appendChild(anuluj);
+    ostrzezenie.appendChild(rzadO);
+    ostrzezenie.style.display = "block";
+  };
 }
+/** Nadawcy nie ma w Contacts - jesli jego firma jest w bazie, pozwalamy go dodac. */
+async function panelNowegoKontaktu(box: HTMLElement, nadawca: string, nazwaNadawcy: string) {
+  const domena = nadawca.split("@")[1] ?? "";
+  box.appendChild(el("div", "crm-nowe-info", `${nadawca} nie figuruje w kontaktach.`));
+
+  let firmy: CompanyFull[] = [];
+  try {
+    firmy = (await getAllCompanies())
+      .map(toCompanyFull)
+      .filter((f) => domena && f.domena === domena && f.guid);
+  } catch (e: any) {
+    box.appendChild(el("div", "crm-nowe-info", `Nie sprawdzono firm: ${e?.message ?? e}`));
+    return;
+  }
+
+  if (!firmy.length) {
+    box.appendChild(el("div", "crm-nowe-info",
+      `Brak firmy z domeną ${domena}. Kontakt dodasz z widoku firmy: Firmy → firma → Kontakty.`));
+    return;
+  }
+
+  const btn = el("button", "crm-btn crm-btn-nowe", "+ Dodaj kontakt") as HTMLButtonElement;
+  box.appendChild(btn);
+
+  btn.onclick = () => {
+    btn.remove();
+    const start = { ...rozbijNazwe(nazwaNadawcy), email: nadawca };
+    const formularz = el("div");
+
+    const rysuj = (f: CompanyFull) => {
+      formularz.innerHTML = "";
+      void formularzKontaktu(formularz, f, start, (nowy) => {
+        kontaktCache.set(nadawca, nowy);
+        void pokazZgloszenia();
+      });
+    };
+
+    // kilka firm z ta sama domena (np. oddzialy) - swiadomy wybor
+    if (firmy.length > 1) {
+      box.appendChild(el("label", "crm-label", "Firma"));
+      const wybor = document.createElement("select");
+      wybor.className = "crm-select";
+      firmy.forEach((f, idx) => {
+        const opt = document.createElement("option");
+        opt.value = String(idx);
+        opt.textContent = f.skrocona || f.pelna;
+        wybor.appendChild(opt);
+      });
+      wybor.onchange = () => rysuj(firmy[Number(wybor.value)]);
+      box.appendChild(wybor);
+    } else {
+      box.appendChild(el("div", "crm-nowe-info", `Firma: ${firmy[0].skrocona || firmy[0].pelna}`));
+    }
+
+    box.appendChild(formularz);
+    rysuj(firmy[0]);
+  };
+}
+
+/** Nowy kontakt w firmie - odpowiednik formularza NewContact z Power Apps. */
+async function formularzKontaktu(
+  box: HTMLElement,
+  firma: CompanyFull,
+  start: { imie: string; nazwisko: string; email: string },
+  poZapisie: (nowy: ListItem) => void,
+  anuluj?: () => void
+) {
+  const pole = (etykieta: string, wartosc = "", typ = "text") => {
+    box.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = typ;
+    i.className = "crm-input";
+    i.value = wartosc;
+    box.appendChild(i);
+    return i;
+  };
+
+  const imie = pole("Imię", start.imie);
+  const nazwisko = pole("Nazwisko", start.nazwisko);
+  const email = pole("E-mail", start.email, "email");
+  const telefon = pole("Telefon", "", "tel");
+  const stanowisko = pole("Stanowisko");
+
+  // --- plec (wymagana) i rola - opcje z definicji kolumn ---
+  let plcie: string[] = [];
+  let role: string[] = [];
+  try {
+    [plcie, role] = await Promise.all([
+      getChoiceOptions("Contacts", "P_x0142_e_x0107_"),
+      getChoiceOptions("Contacts", "RolawMEDDIC"),
+    ]);
+  } catch (e: any) {
+    box.appendChild(el("div", "crm-nowe-info", `Nie pobrano opcji: ${e?.message ?? e}`));
+  }
+
+  let plec = "";
+  let plecRecznie = false;
+  const plecBox = el("div", "crm-chipy");
+  const zaznaczPlec = (v: string) => {
+    plec = v;
+    plecBox.querySelectorAll(".crm-chip-wybor").forEach((x) =>
+      x.classList.toggle("crm-chip-akt", x.textContent === v)
+    );
+  };
+  if (plcie.length) {
+    box.appendChild(el("label", "crm-label", "Płeć"));
+    plcie.forEach((o) => {
+      const b = el("button", "crm-chip-wybor", o) as HTMLButtonElement;
+      b.onclick = () => { plecRecznie = true; zaznaczPlec(o); sprawdz(); };
+      plecBox.appendChild(b);
+    });
+    box.appendChild(plecBox);
+  }
+  const podpowiedzPlci = () => {
+    const p = plecZImienia(imie.value);
+    if (!plecRecznie && plcie.includes(p)) zaznaczPlec(p);
+  };
+  podpowiedzPlci();
+
+  const wybraneRole = new Set<string>();
+  if (role.length) {
+    box.appendChild(el("label", "crm-label", "Rola (MEDDIC)"));
+    const rolaBox = el("div", "crm-chipy");
+    role.forEach((o) => {
+      const b = el("button", "crm-chip-wybor", o) as HTMLButtonElement;
+      b.onclick = () => {
+        if (wybraneRole.has(o)) wybraneRole.delete(o);
+        else wybraneRole.add(o);
+        b.classList.toggle("crm-chip-akt", wybraneRole.has(o));
+        sprawdz();
+      };
+      rolaBox.appendChild(b);
+    });
+    box.appendChild(rolaBox);
+  }
+
+  // --- wysylka Messengera - domyslnie obie wylaczone ---
+  const przelacznik = (etykieta: string) => {
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.id = `kt-${nowyGuid()}`;
+    const lbl = el("label", "crm-check") as HTMLLabelElement;
+    lbl.htmlFor = c.id;
+    lbl.appendChild(c);
+    lbl.appendChild(el("span", undefined, etykieta));
+    box.appendChild(lbl);
+    return c;
+  };
+  const stala = przelacznik("Stała wysyłka Messengera");
+  const tymczasowa = przelacznik("Tymczasowa wysyłka Messengera");
+
+  box.appendChild(el("label", "crm-label", "Uwagi"));
+  const uwagi = document.createElement("textarea");
+  uwagi.className = "crm-textarea";
+  uwagi.rows = 2;
+  box.appendChild(uwagi);
+
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+
+  const zapisz = el("button", "crm-btn", "Zapisz kontakt") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.appendChild(zapisz);
+  if (anuluj) {
+    const a = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    a.onclick = anuluj;
+    rzad.appendChild(a);
+  }
+  rzad.appendChild(komunikat);
+  box.appendChild(rzad);
+
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!imie.value.trim() && !nazwisko.value.trim()) brak.push("imię lub nazwisko");
+    if (plcie.length && !plec) brak.push("płeć");
+    if (role.length && !wybraneRole.size) brak.push("rola");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  imie.oninput = () => { podpowiedzPlci(); sprawdz(); };
+  nazwisko.oninput = () => sprawdz();
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    const mail = email.value.trim().toLowerCase();
+
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    try {
+      // ten sam adres w bazie = duplikat, a dopasowanie nadawcy bierze pierwszy
+      if (mail && (await getContactByEmail(mail))) {
+        throw new Error(`Kontakt z adresem ${mail} już jest w bazie.`);
+      }
+
+      const pola: Record<string, unknown> = {
+        ContactGUID: nowyGuid(),
+        IdentyfikatorCompanies: firma.guid,
+        Imi_x0119_: imie.value.trim(),
+        Nazwisko: nazwisko.value.trim(),
+        Email: mail,
+        Phone: telefon.value.trim(),
+        Stanowisko: stanowisko.value.trim(),
+        UWAGI: uwagi.value.trim(),
+        FirmaID: firma.skrocona,
+        nazwafirmyKontakt: firma.pelna || firma.skrocona,
+        ulicakontakt: firma.ulica,
+        miastoKontakt: firma.miasto,
+        kodpocztowykontakt: firma.kod,
+        Sta_x0142_awysy_x0142_ka: stala.checked,
+        Tymczasowawysy_x0142_ka: tymczasowa.checked,
+      };
+      if (plec) pola["P_x0142_e_x0107_"] = plec;
+      if (wybraneRole.size) {
+        pola["RolawMEDDIC@odata.type"] = "Collection(Edm.String)";
+        pola["RolawMEDDIC"] = [...wybraneRole];
+      }
+
+      const nowy = await createListItem("Contacts", pola);
+      komunikat.textContent = "Kontakt zapisany";
+      komunikat.className = "crm-komunikat crm-ok";
+      poZapisie(nowy);
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
+}
+
 async function panelZgloszenia() {
   const item = Office.context.mailbox.item as Office.MessageRead;
   if (!item) return;
@@ -1430,6 +1744,44 @@ async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
     .map(toContact)
     .sort((a, b) => a.imieNazwisko.localeCompare(b.imieNazwisko, "pl"));
 
+  // --- nowy kontakt w tej firmie ---
+  const dodaj = el("button", "crm-btn crm-btn-cichy", "+ kontakt") as HTMLButtonElement;
+  const nowyBox = el("div", "crm-nowe");
+  nowyBox.style.display = "none";
+  // szukajka (jesli sa kontakty) i przycisk w jednym rzedzie
+  const pasekGorny = el("div", "crm-kontakt-pasek");
+  pasekGorny.appendChild(dodaj);
+  box.appendChild(pasekGorny);
+  box.appendChild(nowyBox);
+  dodaj.onclick = () => {
+    dodaj.disabled = true;
+    nowyBox.innerHTML = "";
+    nowyBox.style.display = "block";
+    const f: CompanyFull = firmaPelna ?? {
+      id: "", guid: c.guid, skrocona: c.nazwa, pelna: "", nip: "", ulica: c.ulica,
+      miasto: c.miasto, kod: c.kod, status: "", dataNDA: "", opiekun: c.opiekun,
+      tecsH: 0, supportDay: 0, preSalesH: 0, uwagi: "", domena: "",
+    };
+    // dane nadawcy otwartego maila - chyba ze to ktos z MESco
+    const od = (Office.context.mailbox.item as Office.MessageRead | undefined)?.from;
+    const mail = (od?.emailAddress ?? "").toLowerCase();
+    const wewnetrzny = mail.endsWith("@" + SUPPORT_MAILBOX.split("@")[1]);
+    const start = mail && !wewnetrzny
+      ? { ...rozbijNazwe(od?.displayName ?? ""), email: mail }
+      : { imie: "", nazwisko: "", email: "" };
+
+    void formularzKontaktu(
+      nowyBox,
+      f,
+      start,
+      () => void pokazFirma(c),
+      () => {
+        nowyBox.style.display = "none";
+        dodaj.disabled = false;
+      }
+    );
+  };
+
   if (!wszyscy.length) {
     s.textContent = "Kontakty — 0";
     return pusto(box, "Brak kontaktów dla tej firmy.");
@@ -1440,7 +1792,7 @@ async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
   szukaj.type = "search";
   szukaj.className = "crm-szukaj";
   szukaj.placeholder = "szukaj osoby, stanowiska, maila";
-  box.appendChild(szukaj);
+  pasekGorny.insertBefore(szukaj, dodaj);
 
   // --- przelacznik: wszyscy / tylko pracujacy ---
   let tylkoAktywni = true;
