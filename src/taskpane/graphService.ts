@@ -797,6 +797,34 @@ export async function getTicketsFiltered(
   });
   return res.value;
 }
+/**
+ * Wszystkie zgloszenia obslugiwane przez dana osobe (MailCreator), bez limitu 50 -
+ * do widoku "Moje zgloszenia" w wlasnej skrzynce. Strony po 500, najnowsze pierwsze.
+ */
+export async function getZgloszeniaObslugujacego(mail: string): Promise<ListItem[]> {
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const listId = await getListId(siteId, "Support", token);
+  const m = mail.trim().replace(/'/g, "''");
+
+  const zebrane: ListItem[] = [];
+  let url: string | null =
+    `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500` +
+    `&$filter=fields/MailCreator eq '${m}'&$orderby=fields/TicketID desc`;
+  let strony = 0;
+  while (url && strony < 20) {
+    const r: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
+    });
+    if (!r.ok) throw new Error(`Graph ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+    zebrane.push(...dane.value);
+    url = dane["@odata.nextLink"] ?? null;
+    strony++;
+  }
+  return zebrane;
+}
+
 /** Zalogowany uzytkownik z Graph. userProfile zwraca adres otwartej skrzynki,
  *  wiec na skrzynce wspoldzielonej dawalby support@mesco.com.pl zamiast osoby. */
 let mojMailCache: string | null = null;
@@ -811,6 +839,41 @@ export async function getMojMail(): Promise<string> {
   );
   mojMailCache = String(me.mail || me.userPrincipalName || "").toLowerCase();
   return mojMailCache;
+}
+
+/**
+ * Czy zalogowany jest na liscie MEScoStaff (kolumna Email) - jak w Power Apps
+ * User().Email in MEScoStaff.Email. Porownujemy mail i UPN, bez wielkosci liter.
+ */
+let pracownikCache: Promise<boolean> | null = null;
+
+export function czyPracownikMESco(): Promise<boolean> {
+  if (pracownikCache) return pracownikCache;
+  pracownikCache = (async () => {
+    const token = await getToken();
+    const siteId = await getSiteId(token);
+    const listId = await getListId(siteId, "MEScoStaff", token);
+
+    const kol = (await getListColumns("MEScoStaff")).find((c) => c.displayName === "Email");
+    const pole = kol?.name ?? "Email";
+
+    const [me, res] = await Promise.all([
+      graphGet<{ mail?: string; userPrincipalName?: string }>("/me?$select=mail,userPrincipalName", token),
+      graphGet<{ value: ListItem[] }>(
+        `/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500`,
+        token,
+        { Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" }
+      ),
+    ]);
+    const moje = [me.mail, me.userPrincipalName]
+      .map((v) => String(v ?? "").trim().toLowerCase())
+      .filter(Boolean);
+    return res.value.some((i) =>
+      moje.includes(String((i.fields as any)[pole] ?? "").trim().toLowerCase())
+    );
+  })();
+  pracownikCache.catch(() => { pracownikCache = null; }); // blad nie zostaje w cache
+  return pracownikCache;
 }
 /**
  * Elementy dowolnej listy powiazane z firma.

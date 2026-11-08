@@ -5,7 +5,7 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu,
+  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego,
 } from "./graphService";
 import type { ListItem, PozycjaCennika } from "./graphService";
 import {
@@ -44,7 +44,10 @@ type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty";
 let widok: Widok = "zgloszenia";
 let ostatniaFirma: Company | null = null;
 
-let zakresZgloszen: "mail" | "firma" | "wszystkie" = "mail";
+type ZakresZgl = "moje" | "mail" | "firma" | "wszystkie";
+// osobno dla skrzynki supportu i wlasnej - we wlasnej domyslnie "Moje zgloszenia"
+const zakresy: Record<"support" | "wlasna", ZakresZgl> = { support: "mail", wlasna: "moje" };
+let pokazZglLicznik = 0;
 let opiekunZgloszen = "";
 let frazaKontaktow = "";
 
@@ -274,7 +277,7 @@ async function czySkrzynkaSupportu(item: Office.MessageRead): Promise<boolean> {
   if ((Office.context.mailbox.userProfile.emailAddress ?? "").toLowerCase() === cel) return true;
 
   const it = item as any;
-  if (typeof it.getSharedPropertiesAsync !== "function") return false;
+  if (typeof it?.getSharedPropertiesAsync !== "function") return false;
   return new Promise((resolve) => {
     it.getSharedPropertiesAsync((r: Office.AsyncResult<Office.SharedProperties>) => {
       resolve(
@@ -1084,10 +1087,14 @@ async function panelZgloszenia() {
 async function pokazZgloszenia() {
   widok = "zgloszenia";
   ustawNaglowek("Support", "nav-tickets");
-  root().innerHTML = "";
+  const wywolanie = ++pokazZglLicznik;
 
   const item = Office.context.mailbox.item as Office.MessageRead;
   const nadawca = (item?.from?.emailAddress ?? "").toLowerCase();
+  const klucz = (await czySkrzynkaSupportu(item)) ? "support" : "wlasna";
+  if (wywolanie !== pokazZglLicznik || widok !== "zgloszenia") return; // w miedzyczasie zmiana maila/widoku
+  let zakresZgloszen = zakresy[klucz];
+  root().innerHTML = "";
 
   // --- pasek filtrow ---
   const filtry = el("div", "crm-filtry");
@@ -1103,6 +1110,7 @@ async function pokazZgloszenia() {
   const zakres = document.createElement("select");
   zakres.className = "crm-select";
   [
+    { v: "moje", t: "Moje zgłoszenia" },
     { v: "mail", t: nadawca ? `Osoba: ${nadawca}` : "Z tej wiadomości" },
     { v: "firma", t: "Firma z tej wiadomości" },
     { v: "wszystkie", t: "Wszystkie zgłoszenia" },
@@ -1114,8 +1122,10 @@ async function pokazZgloszenia() {
     zakres.appendChild(opt);
   });
   if (!nadawca) {
-    zakres.value = "wszystkie";
-    zakresZgloszen = "wszystkie";
+    if (zakresZgloszen === "mail" || zakresZgloszen === "firma") {
+      zakres.value = "wszystkie";
+      zakresZgloszen = "wszystkie";
+    }
     (zakres.querySelector('option[value="mail"]') as HTMLOptionElement).disabled = true;
     (zakres.querySelector('option[value="firma"]') as HTMLOptionElement).disabled = true;
   }
@@ -1168,6 +1178,11 @@ async function pokazZgloszenia() {
         s.textContent = `Numer zaczyna się od ${nr} — ${items.length}`;
         if (!items.length) lista.appendChild(el("div", "crm-pusto", `Brak zgłoszeń z numerem od ${nr}.`));
         items.map(toTicket).forEach((t) => lista.appendChild(karta(t)));
+        return;
+      }
+
+      if (zakresZgloszen === "moje") {
+        await listaMoichZgloszen(lista, s, () => moje !== pokolenie);
         return;
       }
 
@@ -1225,8 +1240,13 @@ async function pokazZgloszenia() {
     timer = window.setTimeout(() => void wczytaj(), 300);
   };
 
+  // filtr opiekuna nie ma sensu przy "Moje zgloszenia"
+  const pokazOpiekuna = () => (wybor.style.display = zakresZgloszen === "moje" ? "none" : "");
+  pokazOpiekuna();
   zakres.onchange = () => {
-    zakresZgloszen = zakres.value as "mail" | "firma" | "wszystkie";
+    zakresZgloszen = zakres.value as ZakresZgl;
+    zakresy[klucz] = zakresZgloszen;
+    pokazOpiekuna();
     void wczytaj();
   };
   wybor.onchange = () => {
@@ -1237,6 +1257,83 @@ async function pokazZgloszenia() {
   await wczytaj();
 }
 
+
+// ---------------------------------------------------------------- moje zgloszenia
+
+// kolejnosc jak w obiegu zgloszenia; zalatwione zwiniete, bo bywa ich setki
+const KATEGORIE_ZGLOSZEN = [
+  { nazwa: "Przydzielony", otwarta: true },
+  { nazwa: "Oczekuje na odpowiedź", otwarta: true },
+  { nazwa: "Rozwiązany", otwarta: false },
+  { nazwa: "Zamknięty", otwarta: false },
+];
+const ZGLOSZEN_NA_STRONE = 30;
+
+function kategoriaZgloszenia(t: Ticket): string {
+  if (t.status) return t.status;
+  return t.zamkniete ? "Zamknięty" : "Bez statusu";
+}
+
+/** Wszystkie zgloszenia zalogowanego (MailCreator) w sekcjach wedlug StatusTicket. */
+async function listaMoichZgloszen(lista: HTMLElement, s: HTMLElement, nieaktualne: () => boolean) {
+  const mail = await getMojMail();
+  const tickety = (await getZgloszeniaObslugujacego(mail)).map(toTicket);
+  if (nieaktualne()) return;
+
+  s.textContent = `Moje zgłoszenia (${tickety.length})`;
+  if (!tickety.length) {
+    pusto(lista, `Brak zgłoszeń, w których obsługującym jest ${mail}.`);
+    return;
+  }
+
+  const grupy = new Map<string, Ticket[]>();
+  tickety.forEach((t) => {
+    const k = kategoriaZgloszenia(t);
+    grupy.set(k, [...(grupy.get(k) ?? []), t]);
+  });
+  const znane = KATEGORIE_ZGLOSZEN.map((k) => k.nazwa);
+  const kolejnosc = [...znane, ...[...grupy.keys()].filter((k) => !znane.includes(k))];
+
+  kolejnosc.forEach((nazwa) => {
+    const wGrupie = grupy.get(nazwa) ?? [];
+    const def = KATEGORIE_ZGLOSZEN.find((k) => k.nazwa === nazwa);
+    if (!wGrupie.length && !def) return;
+
+    const sek = document.createElement("details");
+    sek.className = "crm-kat";
+    sek.open = !!def?.otwarta && wGrupie.length > 0;
+    const naglowek = document.createElement("summary");
+    naglowek.className = "crm-kat-naglowek";
+    const kropka = el("span", "crm-kat-kropka");
+    kropka.style.background = KOLOR_STATUSU[nazwa] ?? "#3860B2";
+    naglowek.append(kropka, el("span", "crm-kat-nazwa", nazwa), el("span", "crm-kat-ile", String(wGrupie.length)));
+    sek.appendChild(naglowek);
+
+    const tresc = el("div", "crm-kat-lista");
+    sek.appendChild(tresc);
+    if (!wGrupie.length) tresc.appendChild(el("div", "crm-pusto", "Brak zgłoszeń."));
+
+    const wiecej = el("button", "crm-btn crm-btn-cichy crm-kat-wiecej") as HTMLButtonElement;
+    wiecej.style.display = "none";
+    tresc.appendChild(wiecej);
+    let pokazane = 0;
+    const dorysuj = () => {
+      wGrupie.slice(pokazane, pokazane + ZGLOSZEN_NA_STRONE).forEach((t) => tresc.insertBefore(karta(t), wiecej));
+      pokazane = Math.min(pokazane + ZGLOSZEN_NA_STRONE, wGrupie.length);
+      const zostalo = wGrupie.length - pokazane;
+      wiecej.textContent = `Pokaż kolejne (${Math.min(ZGLOSZEN_NA_STRONE, zostalo)} z ${zostalo})`;
+      wiecej.style.display = zostalo > 0 ? "" : "none";
+    };
+    wiecej.onclick = dorysuj;
+
+    // karty rysujemy dopiero przy pierwszym rozwinieciu sekcji
+    const start = () => { if (!pokazane && wGrupie.length) dorysuj(); };
+    if (sek.open) start();
+    sek.addEventListener("toggle", () => { if (sek.open) start(); });
+
+    lista.appendChild(sek);
+  });
+}
 
 // ---------------------------------------------------------------- galeria firm
 
@@ -1326,13 +1423,19 @@ async function pokazFirmy(fraza = "", opiekunWybrany = "") {
   wybor.appendChild(pusta);
   filtry.appendChild(wybor);
 
+  // dodawanie firm tylko dla osob z MEScoStaff - jak w Power Apps; do sprawdzenia przycisk ukryty
   const nowa = przyciskIk("crm-btn crm-nf-otworz", "firma", "Nowa firma");
+  nowa.style.display = "none";
   nowa.onclick = () => {
     root().innerHTML = "";
     ustawNaglowek("Nowa firma", "nav-companies");
     void formularzNowejFirmy(root(), () => void pokazFirmy(szukaj.value, wybor.value));
   };
   filtry.appendChild(nowa);
+  czyPracownikMESco().then(
+    (ok) => { if (ok) nowa.style.display = ""; },
+    (e) => console.error("MEScoStaff:", e)
+  );
 
   root().appendChild(filtry);
 

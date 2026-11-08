@@ -1,7 +1,8 @@
 // src/taskpane/crm.ts
 import { ListItem } from "./graphService";
 
-export type TicketStatus = "Przydzielony" | "W toku" | "Oczekuje na odpowiedź" | "";
+export type TicketStatus =
+  "Przydzielony" | "W toku" | "Oczekuje na odpowiedź" | "Rozwiązany" | "Zamknięty" | "";
 
 export type Ticket = {
   id: string;            // id elementu listy (do edycji)
@@ -68,6 +69,8 @@ export const KOLOR_STATUSU: Record<string, string> = {
   "Przydzielony": "#DC2626",
   "W toku": "#F59E0B",
   "Oczekuje na odpowiedź": "#10B981",
+  "Rozwiązany": "#2563EB",
+  "Zamknięty": "#6B7280",
 };
 
 /** Numer zgloszenia z tematu wiadomosci: [MESco-ID-14487] */
