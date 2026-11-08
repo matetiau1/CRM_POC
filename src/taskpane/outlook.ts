@@ -5,7 +5,7 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, getCennik,
+  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu,
 } from "./graphService";
 import type { ListItem, PozycjaCennika } from "./graphService";
 import {
@@ -15,6 +15,7 @@ import {
   ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow,
 } from "./crm";
 import { SUPPORT_MAILBOX, POWERAPPS_URL } from "./authConfig";
+import { pobierzPoNip, pelnaNazwa, nipPoprawny } from "./rejestr";
 
 // ---------------------------------------------------------------- start
 
@@ -1319,6 +1320,14 @@ async function pokazFirmy(fraza = "", opiekunWybrany = "") {
   wybor.appendChild(pusta);
   filtry.appendChild(wybor);
 
+  const nowa = przyciskIk("crm-btn crm-nf-otworz", "firma", "Nowa firma");
+  nowa.onclick = () => {
+    root().innerHTML = "";
+    ustawNaglowek("Nowa firma", "nav-companies");
+    void formularzNowejFirmy(root(), () => void pokazFirmy(szukaj.value, wybor.value));
+  };
+  filtry.appendChild(nowa);
+
   root().appendChild(filtry);
 
   const lista = el("div");
@@ -1373,6 +1382,346 @@ async function pokazFirmy(fraza = "", opiekunWybrany = "") {
   wybor.onchange = () => void wczytaj(szukaj.value, wybor.value);
 
   await wczytaj(fraza, opiekunWybrany);
+}
+
+// ---------------------------------------------------------------- nowa firma
+
+const RODZAJE_PROSPECTU = ["Prospect", "Cold", "Warm", "Hot", "Marketing", "Zamknięty"];
+
+// domyslne Źródło jak w Power Apps - po zalogowanym handlowcu
+const ZRODLO_HANDLOWCA: Record<string, string> = {
+  "Mateusz Nowakowski": "MNow",
+  "Przemysław Draga": "PDra",
+  "Grzegorz Woźniak": "GWoz",
+  "Jacek Maj": "JMaj",
+  "Łukasz Borgul": "ŁBor",
+};
+
+/** Nowa firma w Companies - dane po NIP z rejestru VAT, reszta recznie. Odpowiednik conNowaFirma z Power Apps. */
+async function formularzNowejFirmy(miejsce: HTMLElement, anuluj: () => void) {
+  const box = el("div", "crm-nowe crm-nf");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "firma", "Nowa firma"));
+  box.appendChild(el("div", "crm-nowe-info", "Wpisz NIP i pobierz dane z rejestru VAT – resztę pól uzupełnisz ręcznie."));
+
+  const sekcja = (t: string) => box.appendChild(el("div", "crm-nf-sekcja", t));
+  const select = (opcje: string[], start = "") => {
+    const s = document.createElement("select");
+    s.className = "crm-select";
+    opcje.forEach((o) => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o || "wybierz…";
+      opt.selected = o === start;
+      s.appendChild(opt);
+    });
+    box.appendChild(s);
+    return s;
+  };
+
+  // --- identyfikacja ---
+  sekcja("Identyfikacja");
+  const oddzial = document.createElement("input");
+  oddzial.type = "checkbox";
+  oddzial.id = `nf-oddzial-${nowyGuid()}`;
+  const oddzialLbl = el("label", "crm-check") as HTMLLabelElement;
+  oddzialLbl.htmlFor = oddzial.id;
+  oddzialLbl.append(oddzial, el("span", undefined, "Oddział innej firmy"));
+  box.appendChild(oddzialLbl);
+
+  const nipLbl = el("label", "crm-label", "NIP");
+  box.appendChild(nipLbl);
+  const nipRzad = el("div", "crm-nf-nip");
+  const nip = document.createElement("input");
+  nip.type = "text";
+  nip.inputMode = "numeric";
+  nip.className = "crm-input";
+  nip.placeholder = "10 cyfr, bez kresek";
+  const pobierz = el("button", "crm-btn crm-btn-cichy", "Pobierz dane") as HTMLButtonElement;
+  pobierz.title = "Nazwa i adres z Wykazu podatników VAT (Ministerstwo Finansów)";
+  nipRzad.append(nip, pobierz);
+  box.appendChild(nipRzad);
+  const nipInfo = el("div", "crm-komunikat crm-nf-info");
+  box.appendChild(nipInfo);
+
+  const domena = poleFormularza(box, "Domena lub e-mail *");
+  domena.placeholder = "np. firma.pl";
+  const domenaInfo = el("div", "crm-komunikat crm-nf-info");
+  box.appendChild(domenaInfo);
+  const pelna = poleFormularza(box, "Pełna nazwa");
+  pelna.placeholder = "z rejestru lub wpisz ręcznie";
+  const skrocona = poleFormularza(box, "Skrócona nazwa");
+  skrocona.placeholder = "np. SECO";
+
+  // --- adres ---
+  sekcja("Adres");
+  const ulica = poleFormularza(box, "Ulica i numer");
+  const kodMiasto = el("div", "crm-nf-kod");
+  const kolumna = (etykieta: string, ph = "") => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "text";
+    i.className = "crm-input";
+    i.placeholder = ph;
+    k.appendChild(i);
+    kodMiasto.appendChild(k);
+    return i;
+  };
+  const kod = kolumna("Kod pocztowy", "00-000");
+  const miasto = kolumna("Miasto");
+  box.appendChild(kodMiasto);
+  const nda = poleFormularza(box, "NDA ważne do", "date");
+
+  // --- klasyfikacja - opcje z definicji kolumn Companies ---
+  sekcja("Klasyfikacja");
+  let statusy: string[] = [];
+  let branze: string[] = [];
+  let zrodla: Awaited<ReturnType<typeof getOpcjeLookupu>> = null;
+  let opiekunowie: string[] = [];
+  let ja = "";
+  let firmy: ListItem[] = [];
+  try {
+    [statusy, branze, zrodla, opiekunowie, ja, firmy] = await Promise.all([
+      getChoiceOptions("Companies", "Status"),
+      getChoiceOptions("Companies", "Bran_x017c_a"),
+      getOpcjeLookupu("Companies", "Źródło"),
+      getOpiekunowie().catch(() => [] as string[]),
+      getMojaNazwa().catch(() => ""),
+      getAllCompanies(),
+    ]);
+  } catch (e: any) {
+    box.appendChild(el("div", "crm-nowe-info crm-blad", `Nie pobrano opcji: ${e?.message ?? e}`));
+  }
+
+  box.appendChild(el("label", "crm-label", "Status *"));
+  const status = select(["", ...statusy], statusy.includes("Prospect") ? "Prospect" : "");
+  const rodzajBox = el("div");
+  box.appendChild(rodzajBox);
+  rodzajBox.appendChild(el("label", "crm-label", "Rodzaj prospectu"));
+  const rodzaj = select(RODZAJE_PROSPECTU, "Prospect");
+  rodzajBox.appendChild(rodzaj);
+  const pokazRodzaj = () => (rodzajBox.style.display = status.value === "Prospect" ? "" : "none");
+  pokazRodzaj();
+
+  box.appendChild(el("label", "crm-label", "Branża *"));
+  const wybraneBranze = new Set<string>();
+  const branzaBox = el("div", "crm-chipy");
+  branze.forEach((o) => {
+    const b = el("button", "crm-chip-wybor", o) as HTMLButtonElement;
+    b.onclick = () => {
+      if (wybraneBranze.has(o)) wybraneBranze.delete(o);
+      else wybraneBranze.add(o);
+      b.classList.toggle("crm-chip-akt", wybraneBranze.has(o));
+      sprawdz();
+    };
+    branzaBox.appendChild(b);
+  });
+  box.appendChild(branzaBox);
+
+  box.appendChild(el("label", "crm-label", "Opiekun"));
+  if (ja && !opiekunowie.includes(ja)) opiekunowie = [ja, ...opiekunowie];
+  const opiekun = select(["", ...opiekunowie], ja);
+
+  box.appendChild(el("label", "crm-label", "Źródło"));
+  // Źródło to lookup - pokazujemy etykiety, zapisujemy Id pozycji
+  const etykietyZrodel = (zrodla?.opcje ?? []).map((o) => o.etykieta);
+  const zrodloStart = ZRODLO_HANDLOWCA[ja] ?? "TNV";
+  const zrodlo = select(["", ...etykietyZrodel], etykietyZrodel.includes(zrodloStart) ? zrodloStart : "");
+  if (!zrodla) zrodlo.title = "Nie znaleziono kolumny Źródło w Companies";
+
+  // klucz pola w Graph: kolumny zaczynajace sie od "_x" bywaja z prefiksem OData_ - bierzemy ten z danych
+  const kluczZrodla = (() => {
+    if (!zrodla) return null;
+    const kandydaci = [`${zrodla.kolumna}LookupId`, `OData_${zrodla.kolumna}LookupId`];
+    for (const i of firmy) {
+      const hit = kandydaci.find((k) => k in (i.fields as any));
+      if (hit) return hit;
+    }
+    return kandydaci[0];
+  })();
+
+  box.appendChild(el("label", "crm-label", "Uwagi"));
+  const uwagi = document.createElement("textarea");
+  uwagi.className = "crm-textarea";
+  uwagi.rows = 3;
+  uwagi.placeholder = "Dodatkowe informacje o firmie";
+  box.appendChild(uwagi);
+
+  // --- duplikaty: NIP blokuje zapis, domena tylko ostrzega ---
+  const poNipie = new Map<string, string>();
+  const poDomenie = new Map<string, string>();
+  firmy.forEach((i) => {
+    const f = i.fields as any;
+    const nazwa = String(f.Nazwa || f.Pe_x0142_nanazwa || "");
+    const v = String(f.VAT ?? "").replace(/\D/g, "");
+    if (v) poNipie.set(v, nazwa);
+    const d = String(f.DomenA ?? "").trim().toLowerCase();
+    if (d) poDomenie.set(d, nazwa);
+  });
+  const samaDomena = () => (domena.value.trim().toLowerCase().split("@").pop() ?? "").trim();
+
+  // --- przyciski ---
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", "Zapisz firmę") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  function sprawdz(): boolean {
+    const n = nip.value;
+    const pelny = /^\d{10}$/.test(n);
+    const dubel = !oddzial.checked && pelny ? poNipie.get(n) : undefined;
+
+    nipLbl.className = "crm-label";
+    if (oddzial.checked) {
+      nipLbl.textContent = "NIP jednostki nadrzędnej";
+    } else if (!n) {
+      nipLbl.textContent = "NIP";
+    } else if (!pelny) {
+      nipLbl.textContent = "NIP · niepełny numer";
+      nipLbl.classList.add("crm-nf-uwaga");
+    } else if (dubel !== undefined) {
+      nipLbl.textContent = `NIP · firma już jest w bazie: ${dubel || "(bez nazwy)"}`;
+      nipLbl.classList.add("crm-blad");
+    } else if (!nipPoprawny(n)) {
+      nipLbl.textContent = "NIP · błędna suma kontrolna, sprawdź numer";
+      nipLbl.classList.add("crm-nf-uwaga");
+    } else {
+      nipLbl.textContent = "NIP · poprawny";
+      nipLbl.classList.add("crm-ok");
+    }
+    nipRzad.classList.toggle("crm-nf-oddzial", oddzial.checked);
+    pobierz.disabled = !pelny;
+
+    const d = samaDomena();
+    const zajeta = d ? poDomenie.get(d) : undefined;
+    domenaInfo.textContent = zajeta !== undefined ? `Ta domena jest już przypisana do: ${zajeta || "(bez nazwy)"}` : "";
+    domenaInfo.className = zajeta !== undefined ? "crm-komunikat crm-nf-info crm-nf-uwaga" : "crm-komunikat crm-nf-info";
+
+    const brak: string[] = [];
+    if (!pelny || dubel !== undefined) brak.push("NIP");
+    if (!status.value) brak.push("status");
+    if (branze.length && !wybraneBranze.size) brak.push("branża");
+    if (!domena.value.trim()) brak.push("domena");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+
+  // wklejony "PL 123-456-78-90" tez przejdzie
+  nip.oninput = () => {
+    nip.value = nip.value.replace(/\D/g, "").slice(0, 10);
+    sprawdz();
+  };
+  oddzial.onchange = () => {
+    nipInfo.textContent = "";
+    sprawdz();
+  };
+  domena.oninput = () => sprawdz();
+  status.onchange = () => { pokazRodzaj(); sprawdz(); };
+  sprawdz();
+
+  pobierz.onclick = async () => {
+    pobierz.disabled = true;
+    nipInfo.textContent = "Pobieranie z rejestru VAT…";
+    nipInfo.className = "crm-komunikat crm-nf-info";
+    try {
+      const d = await pobierzPoNip(nip.value);
+      if (!d) {
+        nipInfo.textContent = `Brak NIP ${nip.value} w wykazie podatników VAT – uzupełnij dane ręcznie.`;
+        nipInfo.classList.add("crm-nf-uwaga");
+      } else {
+        pelna.value = pelnaNazwa(d.nazwa);
+        ulica.value = d.ulica;
+        kod.value = d.kod;
+        miasto.value = d.miasto;
+        const vat = d.statusVat && d.statusVat !== "Czynny" ? ` Status VAT: ${d.statusVat}.` : "";
+        nipInfo.textContent = `Pobrano dane z rejestru VAT.${vat}`;
+        nipInfo.classList.add(vat ? "crm-nf-uwaga" : "crm-ok");
+      }
+    } catch (e: any) {
+      nipInfo.textContent = e?.message ?? String(e);
+      nipInfo.classList.add("crm-blad");
+    }
+    sprawdz();
+  };
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    try {
+      // pole Osoba wymaga Id uzytkownika witryny - szukamy maila wybranego opiekuna
+      let opiekunId: number | null = null;
+      if (opiekun.value) {
+        const mail = opiekun.value === ja
+          ? await getMojMail()
+          : (await getSerwisanci().catch(() => [])).find((s) => s.nazwa === opiekun.value)?.mail ?? "";
+        if (mail) opiekunId = await getSiteUserId(mail);
+      }
+
+      const guid = nowyGuid();
+      const pola: Record<string, unknown> = {
+        CompaniesGUID: guid,
+        Pe_x0142_nanazwa: pelna.value.trim(),
+        Nazwa: skrocona.value.trim(),
+        Oddzia_x0142_: oddzial.checked,
+        VAT: oddzial.checked ? "" : nip.value,
+        Ulica: ulica.value.trim(),
+        Kodpocztowy: kod.value.trim(),
+        Miasto: miasto.value.trim(),
+        Status: status.value,
+        Status1: status.value,
+        Uwagi: uwagi.value.trim(),
+        Domen_x0040_: domena.value.trim(),
+        DomenA: samaDomena(),
+        Tw_x00f3_rcaFirmy: ja,
+        Creator: opiekun.value,
+      };
+      if (oddzial.checked) pola["NIPjednostkiNadrzednej"] = Number(nip.value);
+      if (status.value === "Prospect") pola["ProspectStatus"] = rodzaj.value;
+      if (nda.value) pola["DataNDA"] = dzienSP(nda.value);
+      if (wybraneBranze.size) {
+        pola["Bran_x017c_a@odata.type"] = "Collection(Edm.String)";
+        pola["Bran_x017c_a"] = [...wybraneBranze];
+      }
+      const idZrodla = zrodla?.opcje.find((o) => o.etykieta === zrodlo.value)?.id;
+      if (kluczZrodla && idZrodla) pola[kluczZrodla] = idZrodla;
+      if (opiekunId !== null) pola["Utworzoneprzez_x002f_OpiekunLookupId"] = String(opiekunId);
+
+      const nowy = await createListItem("Companies", pola);
+      wyczyscCacheFirm();
+
+      const c: Company = {
+        id: String(nowy.id ?? (nowy.fields as any)?.id ?? ""),
+        guid,
+        nazwa: skrocona.value.trim() || pelna.value.trim(),
+        ulica: ulica.value.trim(),
+        kod: kod.value.trim(),
+        miasto: miasto.value.trim(),
+        tecs: 0,
+        opiekun: opiekun.value,
+      };
+      zakladkaFirmy = "Kontakty";
+      await pokazFirma(c);
+      if (opiekun.value && opiekunId === null) {
+        console.warn("Nowa firma bez pola Opiekun (osoba) - nie znaleziono użytkownika witryny:", opiekun.value);
+      }
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
 }
 
 // ---------------------------------------------------------------- kontakty firmy

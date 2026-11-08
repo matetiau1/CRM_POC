@@ -217,6 +217,31 @@ export async function getChoiceOptions(listName: string, column: string): Promis
 }
 
 /**
+ * Kolumna typu lookup po nazwie wyswietlanej: jej nazwa wewnetrzna i pozycje
+ * listy, na ktora wskazuje (odpowiednik Choices() na lookupie w Power Apps).
+ */
+export async function getOpcjeLookupu(
+  listName: string,
+  wyswietlana: string
+): Promise<{ kolumna: string; opcje: { id: string; etykieta: string }[] } | null> {
+  const kol = (await getListColumns(listName)).find((c) => c.displayName === wyswietlana) as any;
+  if (!kol?.lookup?.listId) return null;
+
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const pole = String(kol.lookup.columnName || "Title");
+  const res = await graphGet<{ value: ListItem[] }>(
+    `/sites/${siteId}/lists/${kol.lookup.listId}/items?expand=fields&$top=500`,
+    token
+  );
+  const opcje = res.value
+    .map((it) => ({ id: String(it.id), etykieta: String((it.fields as any)[pole] ?? "").trim() }))
+    .filter((o) => o.etykieta)
+    .sort((a, b) => a.etykieta.localeCompare(b.etykieta, "pl"));
+  return { kolumna: String(kol.name), opcje };
+}
+
+/**
  * Zgloszenia filtrowane po kolumnie. Naglowek Prefer pozwala pytac
  * po kolumnach nieindeksowanych - inaczej Graph odrzuca zapytanie.
  */

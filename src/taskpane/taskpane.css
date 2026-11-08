@@ -1758,3 +1758,38 @@ content: "";
 }
 .crm-zakladka-szeroka .crm-ikona { width: 13px; height: 13px; flex: none; }
 .crm-zakladka-szeroka:hover { color: #7C3AED; background: #E9DCFD; border-color: #7C3AED; }
+
+/* ---------- 27. NOWA FIRMA (formularz z danymi z rejestru VAT) ---------- */
+.crm-nf-otworz {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.crm-nf-otworz .crm-ikona { width: 14px; height: 14px; }
+.crm-nf-sekcja {
+  margin: 14px 0 2px;
+  padding-top: 10px;
+  border-top: 1px solid #D9E1F2;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--crm-tekst-3);
+}
+.crm-nf-nip { display: flex; gap: 6px; }
+.crm-nf-nip .crm-input { flex: 1; min-width: 0; margin-bottom: 0; }
+.crm-nf-nip .crm-btn { flex: none; white-space: nowrap; }
+.crm-nf-oddzial .crm-btn { display: none; }
+.crm-nf-info { display: block; margin: 4px 0 10px; }
+.crm-nf-info:empty { margin: 0 0 10px; }
+.crm-nf-uwaga { color: var(--crm-c-uwaga); }
+.crm-label.crm-ok,
+.crm-label.crm-blad,
+.crm-label.crm-nf-uwaga { font-weight: 600; }
+.crm-nf-kod {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+}
+.crm-nf .crm-chipy { margin-bottom: 10px; }
