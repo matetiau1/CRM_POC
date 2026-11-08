@@ -1247,6 +1247,12 @@ function supportyOdmiana(n: number): string {
   return `${n} ${d >= 2 && d <= 4 && (s < 12 || s > 14) ? "supporty" : "supportów"}`;
 }
 
+function firmyOdmiana(n: number): string {
+  if (n === 1) return "1 firma";
+  const d = n % 10, s = n % 100;
+  return `${n} ${d >= 2 && d <= 4 && (s < 12 || s > 14) ? "firmy" : "firm"}`;
+}
+
 function kartaFirmy(c: Company, liczby?: Promise<Map<string, number>>): HTMLElement {
   const card = el("div", "crm-firma-card");
   card.tabIndex = 0;
@@ -1361,7 +1367,7 @@ async function pokazFirmy(fraza = "", opiekunWybrany = "") {
       if (o) opis.push(`opiekun: ${o}`);
       s.textContent = opis.length
         ? `${opis.join(" · ")} — ${firmy.length}`
-        : `Największy TECS (${firmy.length})`;
+        : `Największe zużycie TECSu (${firmyOdmiana(firmy.length)} w spisie)`;
 
       if (!firmy.length) lista.appendChild(el("div", "crm-pusto", "Brak firm dla tych kryteriów."));
       const liczby = getLiczbaSupportowRok();
