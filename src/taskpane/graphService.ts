@@ -430,6 +430,55 @@ export async function getAllContacts(force = false): Promise<ListItem[]> {
   return zebrane;
 }
 
+/** Liczba supportow na firme (IdentyfikatorCompanies) z ostatnich 12 miesiecy.
+ *  Jedno stronicowane zapytanie zamiast osobnego dla kazdej karty; wynik trzymamy 10 min. */
+let supportyRokCache: { kiedy: number; mapa: Promise<Map<string, number>> } | null = null;
+
+export function getLiczbaSupportowRok(force = false): Promise<Map<string, number>> {
+  if (supportyRokCache && !force && Date.now() - supportyRokCache.kiedy < 10 * 60 * 1000) {
+    return supportyRokCache.mapa;
+  }
+  const mapa = (async () => {
+    const token = await getToken();
+    const siteId = await getSiteId(token);
+    const listId = await getListId(siteId, "Support", token);
+
+    const od = new Date();
+    od.setFullYear(od.getFullYear() - 1);
+
+    const wynik = new Map<string, number>();
+    let url: string | null =
+      `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields(select=IdentyfikatorCompanies)` +
+      `&$filter=fields/Data ge '${od.toISOString()}'&$top=999`;
+    let strony = 0;
+
+    while (url && strony < 50) {
+      const r: Response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly",
+        },
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        throw new Error(`Graph ${r.status}: ${body.slice(0, 300)}`);
+      }
+      const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+      for (const it of dane.value) {
+        const guid = String((it.fields as Record<string, unknown>)?.IdentyfikatorCompanies ?? "");
+        if (guid) wynik.set(guid, (wynik.get(guid) ?? 0) + 1);
+      }
+      url = dane["@odata.nextLink"] ?? null;
+      strony++;
+    }
+    return wynik;
+  })();
+
+  supportyRokCache = { kiedy: Date.now(), mapa };
+  mapa.catch(() => { supportyRokCache = null; }); // blad nie zostaje w cache
+  return mapa;
+}
+
 /** Do przycisku odświeżania - wymusza ponowne pobranie kontaktów. */
 export function wyczyscCacheKontaktow(): void {
   kontaktyCache = null;
@@ -549,6 +598,121 @@ export async function getSerwisanci(): Promise<Serwisant[]> {
 }
 
 
+/**
+ * Id uzytkownika WITRYNY (liczba) dla pola Osoba - Graph nie przyjmuje maila.
+ * Najpierw MEScoStaff (SupportID), potem ukryta lista User Information List.
+ */
+const siteUserCache = new Map<string, number | null>();
+
+/**
+ * Ukryta lista User Information List: mail/UPN -> Id uzytkownika witryny.
+ * Graph nie zwraca jej w zwyklym /lists - trzeba poprosic o facet "system".
+ * Maile porownujemy lokalnie, bo wielkosc liter w EMail bywa rozna.
+ */
+let uzytkownicyCache: Promise<Map<string, number>> | null = null;
+
+function getUzytkownicyWitryny(): Promise<Map<string, number>> {
+  if (uzytkownicyCache) return uzytkownicyCache;
+  uzytkownicyCache = (async () => {
+    const token = await getToken();
+    const siteId = await getSiteId(token);
+
+    const listy = await graphGet<{ value: Array<{ id: string; name?: string; displayName?: string }> }>(
+      `/sites/${siteId}/lists?$select=id,name,displayName,system&$top=999`,
+      token
+    );
+    const uil = listy.value.find(
+      (l) => l.displayName === "User Information List" || (l.name ?? "").toLowerCase() === "users"
+    );
+    if (!uil) throw new Error("brak dostępu do User Information List");
+
+    const mapa = new Map<string, number>();
+    let url: string | null =
+      `${GRAPH}/sites/${siteId}/lists/${uil.id}/items?expand=fields(select=EMail,UserName)&$top=999`;
+    let strony = 0;
+    while (url && strony < 20) {
+      const r: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(`Graph ${r.status}: ${(await r.text()).slice(0, 300)}`);
+      const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+      dane.value.forEach((it) => {
+        const n = Number(it.id);
+        if (!Number.isInteger(n) || n <= 0) return;
+        const f = it.fields as Record<string, unknown>;
+        [f.EMail, f.UserName].forEach((v) => {
+          const k = String(v ?? "").trim().toLowerCase();
+          if (k && !mapa.has(k)) mapa.set(k, n);
+        });
+      });
+      url = dane["@odata.nextLink"] ?? null;
+      strony++;
+    }
+    return mapa;
+  })();
+  uzytkownicyCache.catch(() => { uzytkownicyCache = null; }); // blad nie zostaje w cache
+  return uzytkownicyCache;
+}
+
+export async function getSiteUserId(email: string): Promise<number | null> {
+  const mail = email.trim().toLowerCase();
+  if (!mail) return null;
+  if (siteUserCache.has(mail)) return siteUserCache.get(mail)!;
+
+  let id: number | null = null;
+  try {
+    id = (await getSerwisanci()).find((s) => s.mail === mail)?.siteId ?? null;
+  } catch {
+    id = null;
+  }
+
+  if (id === null) {
+    try {
+      id = (await getUzytkownicyWitryny()).get(mail) ?? null;
+    } catch (e) {
+      console.warn("User Information List:", e);
+      id = null;
+    }
+  }
+
+  if (id !== null) siteUserCache.set(mail, id);
+  return id;
+}
+
+/** Cennik licencji (Cennik_CRM) - do kodow demo. Title to nazwa w wyszukiwarce, Nazwa idzie do zapisu. */
+export type PozycjaCennika = { id: string; tytul: string; nazwa: string };
+let cennikCache: PozycjaCennika[] | null = null;
+
+export async function getCennik(): Promise<PozycjaCennika[]> {
+  if (cennikCache) return cennikCache;
+
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const listId = await getListId(siteId, "Cennik_CRM", token);
+
+  const zebrane: PozycjaCennika[] = [];
+  let url: string | null =
+    `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields(select=Title,Nazwa)&$top=999`;
+  let strony = 0;
+
+  while (url && strony < 20) {
+    const r: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) {
+      const body = await r.text();
+      throw new Error(`Graph ${r.status}: ${body.slice(0, 300)}`);
+    }
+    const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+    dane.value.forEach((it) => {
+      const f = it.fields as Record<string, unknown>;
+      const tytul = String(f.Title ?? "").trim();
+      if (tytul) zebrane.push({ id: it.id, tytul, nazwa: String(f.Nazwa ?? "").trim() || tytul });
+    });
+    url = dane["@odata.nextLink"] ?? null;
+    strony++;
+  }
+
+  cennikCache = zebrane.sort((a, b) => a.tytul.localeCompare(b.tytul, "pl"));
+  return cennikCache;
+}
+
 /** Kontakty przypisane do firmy po IdentyfikatorCompanies. */
 export async function getContactsByCompany(companyGuid: string, top = 100): Promise<ListItem[]> {
   const token = await getToken();
@@ -570,8 +734,23 @@ export async function getContactsByCompany(companyGuid: string, top = 100): Prom
  * Zgloszenia z laczonymi filtrami. Puste wartosci pomijamy,
  * wiec brak filtrow = najnowsze zgloszenia z calej listy.
  */
+/** TicketID jest liczba, wiec startswith nie dziala - "12" zamieniamy na zakresy
+ *  12, 120-129, 1200-1299 ... az do MAX_CYFR cyfr. */
+const MAX_CYFR = 7;
+function warunekPrefiksuNumeru(prefiks: string): string {
+  const p = Number(prefiks);
+  const czesci = [`fields/TicketID eq ${p}`];
+  for (let d = 1; prefiks.length + d <= MAX_CYFR; d++) {
+    const lo = p * 10 ** d;
+    czesci.push(`(fields/TicketID ge ${lo} and fields/TicketID le ${lo + 10 ** d - 1})`);
+  }
+  return `(${czesci.join(" or ")})`;
+}
+
 export async function getTicketsFiltered(
-  opts: { osobaMail?: string; mailCreator?: string; companyGuid?: string; top?: number } = {}
+  opts: {
+    osobaMail?: string; mailCreator?: string; companyGuid?: string; ticketPrefix?: string; top?: number;
+  } = {}
 ): Promise<ListItem[]> {
   const token = await getToken();
   const siteId = await getSiteId(token);
@@ -582,6 +761,7 @@ export async function getTicketsFiltered(
   if (opts.osobaMail?.trim()) warunki.push(`fields/OsobaMail eq '${esc(opts.osobaMail)}'`);
   if (opts.mailCreator?.trim()) warunki.push(`fields/MailCreator eq '${esc(opts.mailCreator)}'`);
   if (opts.companyGuid?.trim()) warunki.push(`fields/IdentyfikatorCompanies eq '${esc(opts.companyGuid)}'`);
+  if (opts.ticketPrefix) warunki.push(warunekPrefiksuNumeru(opts.ticketPrefix));
 
   let url = `/sites/${siteId}/lists/${listId}/items?expand=fields&$top=${opts.top ?? 50}`;
   if (warunki.length) url += `&$filter=${warunki.join(" and ")}`;

@@ -245,6 +245,9 @@ export type TecsRow = {
   tp: boolean;
   demo: boolean;
   klient: string;
+  guid: string;       // TECSGUID - laczy z licencjami w Oferty_TECS
+  firmaId: string;    // FirmaID
+  odbiorca: string;   // Odbiorca_oferty - dla kogo kody demo
 };
 
 export function toTecs(item: ListItem): TecsRow {
@@ -259,6 +262,9 @@ export function toTecs(item: ListItem): TecsRow {
     tp: f.TP === true,
     demo: f.Demo === true,
     klient: s(f.Numer_klienta),
+    guid: s(f.TECSGUID),
+    firmaId: s(f.FirmaID),
+    odbiorca: s(f.Odbiorca_oferty),
   };
 }
 

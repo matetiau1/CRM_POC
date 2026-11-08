@@ -5,13 +5,14 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
+  getLiczbaSupportowRok, getSiteUserId, getCennik,
 } from "./graphService";
-import type { ListItem } from "./graphService";
+import type { ListItem, PozycjaCennika } from "./graphService";
 import {
   toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, ticketIdZTematu, Ticket, Company,
   toContact, Contact, toCompanyFull, CompanyFull, toNota, toTecs, toSzansa,
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
-  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid,
+  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow,
 } from "./crm";
 import { SUPPORT_MAILBOX, POWERAPPS_URL } from "./authConfig";
 
@@ -52,6 +53,7 @@ type Zakladka =
 
 let zakladkaFirmy: Zakladka = "Kontakty";
 let tecsTryb: "Bieżące" | "Archiwalne" | "Demo" = "Bieżące";
+let otworzKodyDemo = false; // kafelek "Nowe kody demo" -> TECS/Demo z otwartym formularzem
 let szanseZamkniete = false;
 let posTryb: "Aktywne TECS" | "Wygasłe" | "Bez TECS" = "Aktywne TECS";
 
@@ -142,6 +144,50 @@ function blysk(obok: HTMLElement, tekst: string) {
   setTimeout(() => b.remove(), 1400);
 }
 
+// ikony Lucide - ten sam zestaw co w dolnym pasku
+const IKONY = {
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  firma: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
+  osoba: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  sluchawki: '<path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z"/><path d="M21 16v2a4 4 0 0 1-4 4h-5"/>',
+  zegar: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  kalendarz: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
+  klodka: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  klodkaOtwarta: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>',
+  klucz: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  czapka: '<path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>',
+  pinezka: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  opiekun: '<path d="M2 21a8 8 0 0 1 13.292-6"/><circle cx="10" cy="8" r="5"/><path d="m16 19 2 2 4-4"/>',
+  tarcza: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  kopiuj: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  wykres: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+  etykieta: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  paczka: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.977 4.947a2 2 0 0 0 2.046 0L20.7 7"/>',
+  licencja: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r="1"/>',
+  dokument: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  pioro: '<path d="M12 20h9"/><path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z"/>',
+  dymek: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  dzwonek: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  cel: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  euro: '<path d="M4 10h12"/><path d="M4 14h9"/><path d="M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/>',
+  klepsydra: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+  flaga: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+  teczka: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
+  kosz: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/>',
+  telefon: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+};
+
+function ikona(nazwa: keyof typeof IKONY): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("crm-ikona");
+  svg.innerHTML = IKONY[nazwa];
+  return svg;
+}
+
 /** Zamienia element w przycisk kopiujacy podana wartosc. */
 function zrobKopiowalny(elem: HTMLElement, wartosc: string, etykieta = "skopiowano") {
   elem.classList.add("crm-kopiuj");
@@ -153,12 +199,28 @@ function zrobKopiowalny(elem: HTMLElement, wartosc: string, etykieta = "skopiowa
   };
 }
 
-/** Mala pastylka z kolorem tekstu i tla. */
-function pastylka(tekst: string, kolor: string, tlo: string): HTMLElement {
-  const p = el("span", "crm-pill", tekst);
+/** Mala pastylka z kolorem tekstu i tla, opcjonalnie z ikona. */
+function pastylka(tekst: string, kolor: string, tlo: string, ik?: keyof typeof IKONY): HTMLElement {
+  const p = el("span", "crm-pill", ik ? undefined : tekst);
+  if (ik) p.append(ikona(ik), el("span", undefined, tekst));
   p.style.color = kolor;
   p.style.background = tlo;
   return p;
+}
+
+/** Pole karty: <ikona> tekst. */
+function poleIk(klasa: string, ik: keyof typeof IKONY, tekst: string, tytul?: string): HTMLElement {
+  const w = el("div", `crm-ik ${klasa}`.trim());
+  if (tytul) w.title = tytul;
+  w.append(ikona(ik), el("span", "crm-ikona-txt", tekst));
+  return w;
+}
+
+/** Przycisk z ikona zamiast emoji. */
+function przyciskIk(klasa: string, ik: keyof typeof IKONY, tekst: string): HTMLButtonElement {
+  const b = el("button", klasa) as HTMLButtonElement;
+  b.append(ikona(ik), el("span", undefined, tekst));
+  return b;
 }
 
 function pusto(box: HTMLElement, tekst: string) {
@@ -174,6 +236,7 @@ function segment(box: HTMLElement, opcje: string[], aktywna: string, wybor: (v: 
     b.onclick = () => wybor(o);
     pasek.appendChild(b);
   });
+
   box.appendChild(pasek);
 }
 
@@ -233,21 +296,33 @@ function karta(t: Ticket): HTMLElement {
   head.tabIndex = 0;
   head.setAttribute("role", "button");
 
+  // wiersz z ikona: <ikona> tekst
+  const zIkona = (klasa: string, nazwa: keyof typeof IKONY, tekst: string, tytul: string) => {
+    const w = el("span", klasa);
+    w.title = tytul;
+    const txt = el("span", "crm-ikona-txt", tekst);
+    w.append(ikona(nazwa), txt);
+    return { w, txt };
+  };
+
   const top = el("div", "crm-card-top");
-  top.appendChild(el("span", "crm-firma", t.firma || "(brak firmy)"));
+  top.appendChild(zIkona("crm-firma", "firma", t.firma || "(brak firmy)", "Firma").w);
   const idEl = el("span", "crm-id", `MESco-ID-${t.ticketId}`);
   zrobKopiowalny(idEl, `[MESco-ID-${t.ticketId}]`, "skopiowano numer");
   top.appendChild(idEl);
   head.appendChild(top);
 
   const r1 = el("div", "crm-row");
-  r1.appendChild(el("span", "crm-osoba", t.osoba || "—"));
-  const czasEtykieta = el("span", "crm-czas", t.czas ? `${t.czas} h` : "—");
-  r1.appendChild(czasEtykieta);
+  r1.appendChild(zIkona("crm-osoba", "osoba", t.osoba || "—", "Zgłaszający").w);
+  const czas = zIkona("crm-czas", "zegar", t.czas ? `${t.czas} h` : "—", "Czas obsługi");
+  const czasEtykieta = czas.txt;
+  r1.appendChild(czas.w);
   head.appendChild(r1);
 
-  head.appendChild(el("div", "crm-opiekun", t.opiekun || "—"));
-  
+  const r2 = el("div", "crm-row");
+  r2.appendChild(zIkona("crm-opiekun", "sluchawki", t.opiekun || "—", "Obsługujący").w);
+  head.appendChild(r2);
+
   // skrót do pełnego widoku firmy
   if (t.companyId) {
     const doFirmy = el("button", "crm-skrot", "↗ firma") as HTMLButtonElement;
@@ -260,8 +335,16 @@ function karta(t: Ticket): HTMLElement {
     top.appendChild(doFirmy);
   }
   const foot = el("div", "crm-foot");
-  foot.appendChild(el("span", "crm-data", formatData(t.data)));
-  const lock = el("span", "crm-lock", t.zamkniete ? "zamknięte 🔒" : "otwarte 🔓");
+  foot.appendChild(zIkona("crm-data", "kalendarz", formatData(t.data), "Data zgłoszenia").w);
+  const lock = el("span", "crm-lock");
+  const ustawLock = () => {
+    lock.replaceChildren(
+      ikona(t.zamkniete ? "klodka" : "klodkaOtwarta"),
+      el("span", undefined, t.zamkniete ? "zamknięte" : "otwarte")
+    );
+    lock.classList.toggle("crm-lock-zamk", t.zamkniete);
+  };
+  ustawLock();
   foot.appendChild(lock);
   if (t.status) {
     const chip = el("span", "crm-chip", t.status);
@@ -277,7 +360,7 @@ function karta(t: Ticket): HTMLElement {
 
   const odswiezNaglowek = () => {
     czasEtykieta.textContent = t.czas ? `${t.czas} h` : "—";
-    lock.textContent = t.zamkniete ? "zamknięte 🔒" : "otwarte 🔓";
+    ustawLock();
   };
 
   const detale = szczegoly(t, odswiezNaglowek);
@@ -1008,6 +1091,14 @@ async function pokazZgloszenia() {
   // --- pasek filtrow ---
   const filtry = el("div", "crm-filtry");
 
+  // numer zgloszenia (poczatek numeru) - szuka w calej liscie, pomija pozostale filtry
+  const numer = document.createElement("input");
+  numer.type = "search";
+  numer.className = "crm-szukaj";
+  numer.placeholder = "nr zgłoszenia, np. 1234 lub MESco-ID-1234";
+  numer.inputMode = "numeric";
+  filtry.appendChild(numer);
+
   const zakres = document.createElement("select");
   zakres.className = "crm-select";
   [
@@ -1061,12 +1152,24 @@ async function pokazZgloszenia() {
     }
   })();
 
+  let pokolenie = 0; // starsza odpowiedz nie nadpisze nowszej przy szybkim pisaniu
   const wczytaj = async () => {
+    const moje = ++pokolenie;
     lista.innerHTML = "";
     s.textContent = "Pobieranie zgłoszeń...";
     s.classList.remove("crm-error");
 
     try {
+      const nr = numer.value.replace(/\D/g, "").replace(/^0+/, "");
+      if (nr) {
+        const items = await getTicketsFiltered({ ticketPrefix: nr, top: 50 });
+        if (moje !== pokolenie) return;
+        s.textContent = `Numer zaczyna się od ${nr} — ${items.length}`;
+        if (!items.length) lista.appendChild(el("div", "crm-pusto", `Brak zgłoszeń z numerem od ${nr}.`));
+        items.map(toTicket).forEach((t) => lista.appendChild(karta(t)));
+        return;
+      }
+
       const opis: string[] = [];
       let osobaMail = "";
       let companyGuid = "";
@@ -1100,6 +1203,7 @@ async function pokazZgloszenia() {
         mailCreator: opiekunZgloszen,
         top: 50,
       });
+      if (moje !== pokolenie) return;
 
       s.textContent = opis.length
         ? `${opis.join(" · ")} — ${items.length}`
@@ -1112,6 +1216,12 @@ async function pokazZgloszenia() {
       s.textContent = `Błąd: ${e?.message ?? e}`;
       s.classList.add("crm-error");
     }
+  };
+
+  let timer: number | undefined;
+  numer.oninput = () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => void wczytaj(), 300);
   };
 
   zakres.onchange = () => {
@@ -1129,20 +1239,51 @@ async function pokazZgloszenia() {
 
 // ---------------------------------------------------------------- galeria firm
 
-function kartaFirmy(c: Company): HTMLElement {
+/** 1 support, 2-4 supporty, 5+ supportow (12-14 tez supportow) */
+function supportyOdmiana(n: number): string {
+  if (n === 1) return "1 support";
+  const d = n % 10, s = n % 100;
+  return `${n} ${d >= 2 && d <= 4 && (s < 12 || s > 14) ? "supporty" : "supportów"}`;
+}
+
+function kartaFirmy(c: Company, liczby?: Promise<Map<string, number>>): HTMLElement {
   const card = el("div", "crm-firma-card");
   card.tabIndex = 0;
   card.setAttribute("role", "button");
 
+  const linia = (klasa: string, nazwa: keyof typeof IKONY, tekst: string, tytul: string) => {
+    const w = el("div", klasa);
+    w.title = tytul;
+    w.append(ikona(nazwa), el("span", "crm-ikona-txt", tekst));
+    return w;
+  };
+
   const top = el("div", "crm-firma-top");
-  top.appendChild(el("span", "crm-firma-nazwa", c.nazwa || "(bez nazwy)"));
+  const nazwa = el("span", "crm-firma-nazwa");
+  nazwa.append(ikona("firma"), el("span", "crm-ikona-txt", c.nazwa || "(bez nazwy)"));
+  top.appendChild(nazwa);
   top.appendChild(el("span", "crm-tecs", `TECS: ${c.tecs}`));
   card.appendChild(top);
 
   const adres = [c.ulica, [c.kod, c.miasto].filter(Boolean).join(" ")].filter(Boolean);
-  if (adres.length) card.appendChild(el("div", "crm-adres", adres.join("\n")));
+  if (adres.length) card.appendChild(linia("crm-adres", "pinezka", adres.join("\n"), "Adres"));
 
-  if (c.opiekun) card.appendChild(el("div", "crm-firma-opiekun", `Opiekun: ${c.opiekun}`));
+  if (c.opiekun) card.appendChild(linia("crm-firma-opiekun", "opiekun", c.opiekun, "Opiekun"));
+
+  // liczba supportow z ostatnich 12 miesiecy - dociagana po narysowaniu karty
+  if (liczby) {
+    const stat = linia("crm-firma-stat", "klucz", "…", "Supporty z ostatnich 12 miesięcy");
+    const txt = stat.querySelector(".crm-ikona-txt")!;
+    card.appendChild(stat);
+    liczby.then(
+      (m) => {
+        const n = m.get(c.guid) ?? 0;
+        txt.textContent = n ? `${supportyOdmiana(n)} w ostatnim roku` : "brak supportów w ostatnim roku";
+        stat.classList.toggle("crm-firma-stat-zero", !n);
+      },
+      () => stat.remove()
+    );
+  }
 
   const otworz = () => {
     zakladkaFirmy = "Kontakty";
@@ -1214,7 +1355,9 @@ async function pokazFirmy(fraza = "", opiekunWybrany = "") {
         : `Największy TECS (${firmy.length})`;
 
       if (!firmy.length) lista.appendChild(el("div", "crm-pusto", "Brak firm dla tych kryteriów."));
-      firmy.forEach((c) => lista.appendChild(kartaFirmy(c)));
+      const liczby = getLiczbaSupportowRok();
+      liczby.catch((e) => console.error("liczba supportow:", e));
+      firmy.forEach((c) => lista.appendChild(kartaFirmy(c, liczby)));
     } catch (e: any) {
       console.error(e);
       s.textContent = `Błąd: ${e?.message ?? e}`;
@@ -1245,7 +1388,8 @@ function kartaKontaktu(k: Contact, c: Company): HTMLElement {
   if (k.stanowisko) card.appendChild(el("div", "crm-adres", k.stanowisko));
 
   if (k.email) {
-    const mail = el("div", "crm-kontakt-linia", k.email);
+    const mail = el("div", "crm-kontakt-linia");
+    mail.append(ikona("mail"), el("span", undefined, k.email));
     zrobKopiowalny(mail, k.email, "skopiowano adres");
     card.appendChild(mail);
   }
@@ -1254,7 +1398,7 @@ function kartaKontaktu(k: Contact, c: Company): HTMLElement {
     const tel = document.createElement("a");
     tel.className = "crm-kontakt-linia crm-tel";
     tel.href = `tel:${k.telefon.replace(/[^\d+]/g, "")}`;
-    tel.textContent = k.telefon;
+    tel.append(ikona("telefon"), el("span", undefined, k.telefon));
     tel.title = "Kliknij, aby zadzwonić";
     card.appendChild(tel);
   }
@@ -1395,7 +1539,7 @@ async function formularzNotatki(
 
   // --- rodzaj interakcji (lookup do listy activities) ---
   box.appendChild(el("label", "crm-label", "Rodzaj"));
-  const rodzaje = el("div", "crm-chipy");
+  const rodzaje = el("div", "crm-chipy crm-chipy-rowne");
   box.appendChild(rodzaje);
 
   let rodzaj = "";
@@ -1405,6 +1549,7 @@ async function formularzNotatki(
     if (!opcje.length) throw new Error("lista rodzajów jest pusta");
     opcje.forEach((o) => {
       const b = el("button", "crm-chip-wybor", o.etykieta) as HTMLButtonElement;
+      b.title = o.etykieta;
       b.onclick = () => {
         rodzaj = o.etykieta;
         rodzajId = o.id;
@@ -1558,8 +1703,16 @@ function naglowekFirmy(c: Company): HTMLElement {
   box.appendChild(powrot);
 
   const f = firmaPelna;
-  box.appendChild(el("div", "crm-firma-tytul", f?.skrocona || c.nazwa));
-  if (f?.pelna && f.pelna !== f.skrocona) box.appendChild(el("div", "crm-firma-pelna", f.pelna));
+  // dane firmy w karcie - ten sam styl co karty na liscie
+  const karta = el("div", "crm-firma-karta");
+  box.appendChild(karta);
+  karta.appendChild(poleIk("crm-firma-tytul", "firma", f?.skrocona || c.nazwa));
+  if (f?.pelna && f.pelna !== f.skrocona) karta.appendChild(el("div", "crm-firma-pelna", f.pelna));
+  if (f?.ulica || f?.miasto) {
+    karta.appendChild(
+      poleIk("crm-firma-adres", "pinezka", [f.ulica, [f.kod, f.miasto].filter(Boolean).join(" ")].filter(Boolean).join(", "), "Adres")
+    );
+  }
 
   // --- pastylki ---
   const pills = el("div", "crm-pills");
@@ -1573,7 +1726,7 @@ function naglowekFirmy(c: Company): HTMLElement {
   };
   const st = f?.status || "";
   const [sc, sb] = statusy[st] ?? ["#3860B2", "#EEF0FC"];
-  pills.appendChild(pastylka(st || "brak statusu", sc, sb));
+  pills.appendChild(pastylka(st || "brak statusu", sc, sb, "etykieta"));
 
   const dniNDA = dniDo(f?.dataNDA ?? "");
   const ndaKolor: [string, string] =
@@ -1582,16 +1735,17 @@ function naglowekFirmy(c: Company): HTMLElement {
     : dniNDA !== null && dniNDA <= 30 ? ["#D97706", "#FEF3E2"]
     : ["#16A34A", "#E6F6EE"];
   pills.appendChild(
-    pastylka("NDA " + (f?.dataNDA ? "do " + dataPL(f.dataNDA) : "brak"), ndaKolor[0], ndaKolor[1])
+    pastylka("NDA " + (f?.dataNDA ? "do " + dataPL(f.dataNDA) : "brak"), ndaKolor[0], ndaKolor[1], "tarcza")
   );
 
-  if (f?.opiekun) pills.appendChild(pastylka(f.opiekun, "#3860B2", "#EEF0FC"));
+  if (f?.opiekun) pills.appendChild(pastylka(f.opiekun, "#3860B2", "#EEF0FC", "opiekun"));
   if (tecsAlert) {
     const p = pastylka(
-      `⚠ TECS kończy się za ${tecsAlert.dni} dni` +
+      `TECS kończy się za ${tecsAlert.dni} dni` +
         (tecsAlert.ile > 1 ? ` (${tecsAlert.ile} poz.)` : ""),
       "#DC2626",
-      "#FEE2E2"
+      "#FEE2E2",
+      "alert"
     );
     p.style.cursor = "pointer";
     p.title = "Pokaż licencje";
@@ -1602,13 +1756,13 @@ function naglowekFirmy(c: Company): HTMLElement {
     };
     pills.appendChild(p);
   }
-  box.appendChild(pills);
+  karta.appendChild(pills);
 
   // --- przyciski akcji ---
   const akcje = el("div", "crm-firma-akcje");
 
   if (f?.ulica || f?.miasto) {
-    const mapa = el("button", "crm-akcja", "📍 Nawiguj") as HTMLButtonElement;
+    const mapa = przyciskIk("crm-akcja", "pinezka", "Nawiguj");
     mapa.title = `${f.ulica}, ${f.kod} ${f.miasto}`;
     mapa.onclick = () => {
       const adres = encodeURIComponent(`${f.ulica}, ${f.kod} ${f.miasto}, Polska`);
@@ -1623,7 +1777,7 @@ function naglowekFirmy(c: Company): HTMLElement {
       czysty.length === 10
         ? `${czysty.slice(0, 3)}-${czysty.slice(3, 5)}-${czysty.slice(5, 7)}-${czysty.slice(7)}`
         : czysty;
-    const nipBtn = el("button", "crm-akcja", `⧉ ${widoczny}`) as HTMLButtonElement;
+    const nipBtn = przyciskIk("crm-akcja", "kopiuj", widoczny);
     nipBtn.title = "Kopiuj NIP";
     nipBtn.onclick = async () => {
       const ok = await kopiuj(czysty);
@@ -1632,7 +1786,7 @@ function naglowekFirmy(c: Company): HTMLElement {
     akcje.appendChild(nipBtn);
   }
 
-  const dok = el("button", "crm-akcja", "📁 Dokumenty") as HTMLButtonElement;
+  const dok = przyciskIk("crm-akcja", "folder", "Dokumenty");
   dok.onclick = () =>
     window.open(
       "https://mescocompl.sharepoint.com/sites/CRMSystemPOC/Shared%20Documents/DokumentyKlienci/" +
@@ -1640,23 +1794,23 @@ function naglowekFirmy(c: Company): HTMLElement {
       "_blank"
     );
   akcje.appendChild(dok);
-  box.appendChild(akcje);
+  karta.appendChild(akcje);
 
   // --- liczniki godzin ---
   const liczniki = el("div", "crm-liczniki");
   ([
-    ["TECS", f?.tecsH ?? 0, "#2F6FD6"],
-    ["Support Day", f?.supportDay ?? 0, "#D97706"],
-    ["PreSales", f?.preSalesH ?? 0, "#3860B2"],
-  ] as [string, number, string][]).forEach(([lbl, val, kol]) => {
+    ["TECS", f?.tecsH ?? 0, "#2F6FD6", "tarcza"],
+    ["Support Day", f?.supportDay ?? 0, "#D97706", "klucz"],
+    ["PreSales", f?.preSalesH ?? 0, "#3860B2", "wykres"],
+  ] as [string, number, string, keyof typeof IKONY][]).forEach(([lbl, val, kol, ik]) => {
     const kafel = el("div", "crm-licznik");
-    kafel.appendChild(el("div", "crm-licznik-lbl", lbl));
+    kafel.appendChild(poleIk("crm-licznik-lbl", ik, lbl));
     const v = el("div", "crm-licznik-val", godziny(val));
     v.style.color = val === 0 ? "#9CA3AF" : kol;
     kafel.appendChild(v);
     liczniki.appendChild(kafel);
   });
-  box.appendChild(liczniki);
+  karta.appendChild(liczniki);
 
   // --- zakladki (przewijane w poziomie) ---
   const pasek = el("div", "crm-zakladki");
@@ -1672,6 +1826,16 @@ function naglowekFirmy(c: Company): HTMLElement {
     };
     pasek.appendChild(b);
   });
+  // szeroki kafelek na cala siatke - kody demo laduja w TECS / Demo
+  const demo = el("button", "crm-zakladka crm-zakladka-szeroka") as HTMLButtonElement;
+  demo.append(ikona("licencja"), el("span", undefined, "Nowe kody demo"));
+  demo.onclick = () => {
+    zakladkaFirmy = "TECS";
+    tecsTryb = "Demo";
+    otworzKodyDemo = true;
+    void pokazFirma(c);
+  };
+  pasek.appendChild(demo);
   box.appendChild(pasek);
 
   return box;
@@ -1867,29 +2031,39 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   if (!lista.length) return pusto(box, "Brak notatek dla tej firmy.");
 
   lista.forEach((nt) => {
-        const k = el("div", "crm-nota");
+    const k = el("div", "crm-nota");
     const top = el("div", "crm-nota-top");
-    top.appendChild(el("span", "crm-nota-data", `${dataPL(nt.data)} · ${nt.rodzaj}`));
+    top.appendChild(poleIk("crm-nota-data", "kalendarz", dataPL(nt.data), "Data"));
 
+    // typ notatki w prawym rogu
+    const prawo = el("div", "crm-nota-prawo");
+    if (nt.rodzaj) prawo.appendChild(el("span", "crm-nota-typ", nt.rodzaj));
     const moja = !!ja && nt.autor.trim().toLowerCase() === ja;
-    const kosz = el("button", "crm-usun", "🗑") as HTMLButtonElement;
+    const kosz = el("button", "crm-usun") as HTMLButtonElement;
+    kosz.appendChild(ikona("kosz"));
     kosz.title = "Usuń notatkę";
-    if (moja) top.appendChild(kosz);
+    if (moja) prawo.appendChild(kosz);
+    top.appendChild(prawo);
     k.appendChild(top);
 
-    if (nt.osoba) k.appendChild(el("div", "crm-nota-osoba", nt.osoba));
+    if (nt.osoba) k.appendChild(poleIk("crm-nota-osoba", "osoba", nt.osoba, "Dla kogo"));
     if (nt.followUp) {
       const po = (dniDo(nt.followUp) ?? 0) < 0 && !nt.followDone;
-      k.appendChild(
-        pastylka(
-          (nt.followDone ? "✓ " : "") + "Follow-up " + dataPL(nt.followUp),
-          po ? "#DC2626" : "#D97706",
-          po ? "#FEE2E2" : "#FEF3E2"
-        )
+      const fu = pastylka(
+        (nt.followDone ? "✓ " : "") + "Follow-up " + dataPL(nt.followUp),
+        po ? "#DC2626" : "#D97706",
+        po ? "#FEE2E2" : "#FEF3E2",
+        "dzwonek"
       );
+      fu.classList.add("crm-nota-fu");
+      k.appendChild(fu);
     }
-    if (nt.tresc) k.appendChild(el("div", "crm-nota-tresc", nt.tresc));
-    if (nt.autor) k.appendChild(el("div", "crm-nota-autor", nt.autor));
+    if (nt.tresc) {
+      const tresc = el("div", "crm-nota-tresc");
+      tresc.append(ikona("dymek"), el("div", "crm-nota-tresc-txt", nt.tresc));
+      k.appendChild(tresc);
+    }
+    if (nt.autor) k.appendChild(poleIk("crm-nota-autor", "pioro", nt.autor, "Autor"));
 
     // potwierdzenie - notatka to zapis historii, nie kasujemy jednym kliknieciem
     const pytanie = el("div", "crm-nota-usun");
@@ -1937,6 +2111,14 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     void pokazFirma(c);
   });
 
+  // nowe kody demo - formularz nad lista, otwierany kafelkiem pod zakladkami
+  if (otworzKodyDemo) {
+    otworzKodyDemo = false;
+    const miejsce = el("div");
+    box.appendChild(miejsce);
+    void formularzKodowDemo(miejsce, c, () => void pokazFirma(c), () => miejsce.remove());
+  }
+
   const items = await getByCompany("Opps_TECS", c.guid, { top: 100 });
   const wszystkie = items.map(toTecs);
   const lista =
@@ -1951,30 +2133,490 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
 
   lista.forEach((t) => {
     const k = el("div", "crm-kafel");
-    k.appendChild(el("div", "crm-kafel-nazwa", t.nazwa));
+    const [kol, tlo] = ETAP_KOLORY[t.etap] ?? ["#6B7280", "#F3F4F6"];
+    k.style.borderLeftColor = kol;
 
-    const rzad = el("div", "crm-kafel-rzad");
+    const gora = el("div", "crm-kafel-rzad");
+    gora.appendChild(poleIk("crm-kafel-nazwa", "cel", t.nazwa, "Nazwa szansy"));
+    const etap = pastylka(ETAP_SKROTY[t.etap] ?? t.etap, kol, tlo, "flaga");
+    etap.title = `Etap: ${t.etap}`;
+    gora.appendChild(etap);
+    k.appendChild(gora);
+
     const wart =
       t.demo ? (t.klient ? "Klient " + t.klient : "Kody demo") : t.tp ? "TechPool" : euro(t.wartosc);
-    rzad.appendChild(el("span", "crm-kafel-wartosc", wart));
-    const [kol, tlo] = ETAP_KOLORY[t.etap] ?? ["#6B7280", "#F3F4F6"];
-    rzad.appendChild(pastylka(ETAP_SKROTY[t.etap] ?? t.etap, kol, tlo));
-    k.appendChild(rzad);
+    const ikWart = t.demo ? (t.klient ? "osoba" : "licencja") : t.tp ? "paczka" : "euro";
+    k.appendChild(poleIk("crm-kafel-wartosc", ikWart, wart, "Wartość"));
 
     const d = dniDo(t.koniec);
-    const meta = el(
-      "div",
+    const meta = poleIk(
       "crm-kafel-meta",
+      "klepsydra",
       (t.demo
         ? `${dataPL(t.poczatek)} → ${dataPL(t.koniec)}`
         : `${t.tp ? "TechPool" : "TECS"} do ${dataPL(t.koniec)}`) +
-        (d === null ? "" : ` · ${d < 0 ? "po terminie" : d + (d === 1 ? " dzień" : " dni")}`)
+        (d === null ? "" : ` · ${d < 0 ? "po terminie" : d + (d === 1 ? " dzień" : " dni")}`),
+      "Do kiedy"
     );
     meta.style.color = kolorTerminu(d);
     k.appendChild(meta);
     k.appendChild(pasekTerminu(d));
+
+    if (t.demo) {
+      if (t.odbiorca) k.appendChild(poleIk("crm-kafel-opps", "osoba", t.odbiorca, "Kody demo dla"));
+      const rzadL = el("div", "crm-akcje");
+      const lic = przyciskIk("crm-btn crm-btn-cichy", "paczka", "Dodaj licencje");
+      rzadL.appendChild(lic);
+      k.appendChild(rzadL);
+      lic.onclick = () => {
+        lic.disabled = true;
+        const miejsce = el("div");
+        k.appendChild(miejsce);
+        void formularzLicencjiDemo(miejsce, t, c, () => {
+          miejsce.remove();
+          lic.disabled = false;
+          blysk(lic, "licencje zapisane");
+        }, () => {
+          miejsce.remove();
+          lic.disabled = false;
+        });
+      };
+    }
     box.appendChild(k);
   });
+}
+
+// ---------------------------------------------------------------- kody demo
+
+/** Administracja kodow demo - szybki wybor jak w Power Apps (domyslnie Monika). */
+const ADMINI_DEMO = [
+  { krotko: "Monika", nazwa: "Monika Szafarz", mail: "mszafarz@mesco.com.pl" },
+  { krotko: "Ula", nazwa: "Urszula Horzela", mail: "uhorzela@mesco.com.pl" },
+  { krotko: "Magda", nazwa: "Magdalena Turczyńska", mail: "mturczynska@mesco.com.pl" },
+];
+
+const dzisISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const plusDni = (iso: string, dni: number) => {
+  const d = new Date((iso || dzisISO()) + "T12:00:00");
+  d.setDate(d.getDate() + dni);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+// data bez strefy - SharePoint zapisuje jako dzien (jak w notatkach)
+const dzienSP = (v: string) => (v ? new Date(v + "T07:00:00Z").toISOString() : null);
+
+function poleFormularza(box: HTMLElement, etykieta: string, typ = "text"): HTMLInputElement {
+  box.appendChild(el("label", "crm-label", etykieta));
+  const i = document.createElement("input");
+  i.type = typ;
+  i.className = "crm-input";
+  box.appendChild(i);
+  return i;
+}
+
+function chipyWyboru<T>(
+  box: HTMLElement,
+  opcje: { tekst: string; wartosc: T }[],
+  start: T | null,
+  wybor: (v: T) => void
+): HTMLElement {
+  const rzad = el("div", "crm-chipy");
+  opcje.forEach((o) => {
+    const b = el("button", "crm-chip-wybor", o.tekst) as HTMLButtonElement;
+    if (o.wartosc === start) b.classList.add("crm-chip-akt");
+    b.onclick = () => {
+      rzad.querySelectorAll(".crm-chip-wybor").forEach((x) => x.classList.remove("crm-chip-akt"));
+      b.classList.add("crm-chip-akt");
+      wybor(o.wartosc);
+    };
+    rzad.appendChild(b);
+  });
+  box.appendChild(rzad);
+  return rzad;
+}
+
+/** Nowy wpis kodow demo w Opps_TECS (Demo = true, Etap1 = "Demo"). */
+async function formularzKodowDemo(
+  miejsce: HTMLElement,
+  c: Company,
+  poZapisie: () => void,
+  anuluj: () => void
+) {
+  const f = firmaPelna;
+  const skrocona = f?.skrocona || c.nazwa;
+
+  const box = el("div", "crm-nowe crm-demo");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "licencja", "Nowe kody demo"));
+  box.appendChild(el("div", "crm-nowe-info", f?.pelna || skrocona));
+
+  // --- dla kogo: kontakt z firmy albo wpisane recznie ---
+  box.appendChild(el("label", "crm-label", "Kody demo dla"));
+  const osobaSel = document.createElement("select");
+  osobaSel.className = "crm-select";
+  const brakOsoby = document.createElement("option");
+  brakOsoby.value = "";
+  brakOsoby.textContent = "wybierz osobę z firmy…";
+  osobaSel.appendChild(brakOsoby);
+  box.appendChild(osobaSel);
+  const odbiorca = document.createElement("input");
+  odbiorca.type = "text";
+  odbiorca.className = "crm-input";
+  odbiorca.placeholder = "imię i nazwisko";
+  box.appendChild(odbiorca);
+
+  let kontakty: Contact[] = [];
+  let wybranaOsoba: Contact | null = null;
+  try {
+    kontakty = (await getContactsByCompany(c.guid)).map(toContact)
+      .filter((k) => k.aktywny)
+      .sort((a, b) => a.imieNazwisko.localeCompare(b.imieNazwisko, "pl"));
+    kontakty.forEach((k, i) => {
+      const o = document.createElement("option");
+      o.value = String(i);
+      o.textContent = k.imieNazwisko + (k.stanowisko ? ` · ${k.stanowisko}` : "");
+      osobaSel.appendChild(o);
+    });
+  } catch (e: any) {
+    brakOsoby.textContent = `kontakty: ${e?.message ?? e}`;
+  }
+  osobaSel.onchange = () => {
+    wybranaOsoba = osobaSel.value ? kontakty[Number(osobaSel.value)] : null;
+    if (wybranaOsoba) odbiorca.value = wybranaOsoba.imieNazwisko;
+    sprawdz();
+  };
+  odbiorca.oninput = () => sprawdz();
+
+  const numer = poleFormularza(box, "Numer klienta Ansys");
+
+  // --- okres ---
+  box.appendChild(el("label", "crm-label", "Długość demo"));
+  let dlugosc = 14;
+  const od = document.createElement("input");
+  const doD = document.createElement("input");
+  chipyWyboru(box, [7, 14, 21, 28].map((d) => ({ tekst: `${d} dni`, wartosc: d })), dlugosc, (d) => {
+    dlugosc = d;
+    doD.value = plusDni(od.value, dlugosc);
+  });
+
+  const okres = el("div", "crm-demo-okres");
+  [["Od", od], ["Do", doD]].forEach(([lbl, inp]) => {
+    const kol = el("div");
+    kol.appendChild(el("label", "crm-label", lbl as string));
+    (inp as HTMLInputElement).type = "date";
+    (inp as HTMLInputElement).className = "crm-input";
+    kol.appendChild(inp as HTMLInputElement);
+    okres.appendChild(kol);
+  });
+  box.appendChild(okres);
+  od.value = dzisISO();
+  doD.value = plusDni(od.value, dlugosc);
+  od.onchange = () => {
+    doD.value = plusDni(od.value, dlugosc);
+    fuData.value = plusDni(od.value, 7);
+    sprawdz();
+  };
+  doD.onchange = () => sprawdz();
+
+  // --- administracja ---
+  box.appendChild(el("label", "crm-label", "Administracja"));
+  let admin = ADMINI_DEMO[0];
+  chipyWyboru(box, ADMINI_DEMO.map((a) => ({ tekst: a.krotko, wartosc: a })), admin, (a) => (admin = a));
+
+  // --- spotkanie / follow-up ---
+  const spotkanie = document.createElement("input");
+  spotkanie.type = "checkbox";
+  spotkanie.id = `demo-spot-${c.guid}`;
+  const spLbl = el("label", "crm-check") as HTMLLabelElement;
+  spLbl.htmlFor = spotkanie.id;
+  spLbl.append(spotkanie, el("span", undefined, "Spotkanie z klientem"));
+  box.appendChild(spLbl);
+
+  // data spotkania tylko po zaznaczeniu - inaczej nic nie idzie do Data_Follow_Up
+  const fuBox = el("div");
+  fuBox.style.display = "none";
+  box.appendChild(fuBox);
+  fuBox.appendChild(el("label", "crm-label", "Follow-up z klientem"));
+  const fuRzad = el("div", "crm-demo-okres");
+  const fuData = document.createElement("input");
+  fuData.type = "date";
+  fuData.className = "crm-input";
+  fuData.value = plusDni(od.value, 7);
+  const fuGodz = document.createElement("input");
+  fuGodz.type = "time";
+  fuGodz.className = "crm-input";
+  fuGodz.value = "09:00";
+  fuRzad.append(fuData, fuGodz);
+  fuBox.appendChild(fuRzad);
+  spotkanie.onchange = () => (fuBox.style.display = spotkanie.checked ? "" : "none");
+
+  // --- przyciski ---
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", "Utwórz kody demo") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!odbiorca.value.trim()) brak.push("dla kogo");
+    if (!od.value || !doD.value) brak.push("okres");
+    else if (doD.value < od.value) brak.push("data „do” przed „od”");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  sprawdz();
+
+  wstecz.onclick = anuluj;
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    try {
+      // pole Osoba wymaga Id uzytkownika witryny - opiekun to zalogowany
+      const ja = await getMojMail();
+      const opiekunId = await getSiteUserId(ja);
+      if (opiekunId === null) {
+        throw new Error(`nie znaleziono ${ja} na witrynie CRM - pole Opiekun jest wymagane`);
+      }
+      const adminId = await getSiteUserId(admin.mail);
+
+      const [h, m] = (fuGodz.value || "09:00").split(":").map(Number);
+      const [fy, fm, fd] = fuData.value.split("-").map(Number);
+      const followUp =
+        spotkanie.checked && fuData.value ? new Date(fy, fm - 1, fd, h, m).toISOString() : null;
+
+      const guid = nowyGuid();
+      const nazwa = `Kody demo_${skrocona}`;
+      const pola: Record<string, unknown> = {
+        Nazwaszansysprzeda_x017c_y_TECS: nazwa,
+        Demo: true,
+        Etap1: "Demo",
+        TECSGUID: guid,
+        IdentyfikatorCompanies: c.guid,
+        FirmaID: skrocona,
+        Numer_klienta: numer.value.trim(),
+        Pocz_x0105_tek_TECS: dzienSP(od.value),
+        Koniec_TECS: dzienSP(doD.value),
+        Odbiorca_oferty: odbiorca.value.trim(),
+        MailKontaktu: wybranaOsoba?.email ?? "",
+        TelefonKontaktu: wybranaOsoba?.telefon ?? "",
+        FollowUpKlient: spotkanie.checked,
+        OpiekunLookupId: String(opiekunId),
+      };
+      if (followUp) pola["Data_Follow_Up"] = followUp;
+      if (adminId !== null) pola["DemoAdmLookupId"] = String(adminId);
+
+      const nowy = await createListItem("Opps_TECS", pola);
+
+      // krok 2 - od razu licencje, jak w Power Apps po zapisie formularza
+      box.remove();
+      const kody: TecsRow = {
+        id: String(nowy.id ?? (nowy.fields as any)?.id ?? ""), nazwa, wartosc: 0, etap: "Demo",
+        poczatek: dzienSP(od.value) ?? "", koniec: dzienSP(doD.value) ?? "",
+        tp: false, demo: true, klient: numer.value.trim(),
+        guid, firmaId: skrocona, odbiorca: odbiorca.value.trim(),
+      };
+      const uwaga = adminId === null
+        ? ` (bez administracji - nie znaleziono ${admin.mail} wśród użytkowników witryny CRM, szczegóły w konsoli)`
+        : "";
+      const ok = el("div", "crm-nowe-info crm-ok", `Kody demo utworzone${uwaga}. Dodaj licencje:`);
+      miejsce.appendChild(ok);
+      const krok2 = el("div");
+      miejsce.appendChild(krok2);
+      void formularzLicencjiDemo(krok2, kody, c, poZapisie, poZapisie);
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
+}
+
+/** Licencje do kodow demo - wpis w Oferty_TECS powiazany przez IdentyfikatorTECS. */
+async function formularzLicencjiDemo(
+  miejsce: HTMLElement,
+  kody: TecsRow,
+  c: Company,
+  poZapisie: () => void,
+  anuluj: () => void
+) {
+  const box = el("div", "crm-nowe crm-demo");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "paczka", "Dodaj licencje do kodów demo"));
+  box.appendChild(
+    el("div", "crm-nowe-info", `${kody.firmaId || c.nazwa} · ${dataPL(kody.poczatek)} – ${dataPL(kody.koniec)}`)
+  );
+
+  if (!kody.guid) {
+    box.appendChild(el("div", "crm-komunikat crm-blad", "Ten wpis nie ma TECSGUID - licencji nie da się powiązać."));
+    const zamknij = el("button", "crm-btn crm-btn-cichy", "Zamknij") as HTMLButtonElement;
+    zamknij.onclick = anuluj;
+    box.appendChild(zamknij);
+    return;
+  }
+
+  box.appendChild(el("label", "crm-label", "Wybierz licencje z cennika"));
+  const szukaj = document.createElement("input");
+  szukaj.type = "search";
+  szukaj.className = "crm-szukaj";
+  szukaj.placeholder = "wyszukaj licencję";
+  box.appendChild(szukaj);
+
+  const wyniki = el("div", "crm-demo-wyniki");
+  box.appendChild(wyniki);
+
+  // wybrana z cennika pozycja czeka na liczbe licencji i "Dodaj"
+  const doDodania = el("div", "crm-demo-dodaj");
+  doDodania.style.display = "none";
+  box.appendChild(doDodania);
+
+  box.appendChild(el("label", "crm-label", "Licencje do wygenerowania"));
+  const wybrane = el("div", "crm-demo-lista");
+  box.appendChild(wybrane);
+
+  const zapisz = el("button", "crm-btn", "Wyślij do generowania") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+
+  let cennik: PozycjaCennika[] = [];
+  const wybor: { p: PozycjaCennika; ile: number }[] = [];
+  let zapisanych = 0; // gdy padnie samo DemoOffice, przycisk zostaje do ponowienia
+
+  const rysujWybrane = () => {
+    wybrane.innerHTML = "";
+    if (!wybor.length) wybrane.appendChild(el("div", "crm-podpowiedz", "Wyszukaj licencję i dodaj ją z liczbą sztuk."));
+    wybor.forEach((w, i) => {
+      const wiersz = el("div", "crm-demo-poz");
+      wiersz.append(ikona("paczka"), el("span", "crm-ikona-txt", w.p.tytul), el("span", "crm-demo-ile", `×${w.ile}`));
+      const x = el("button", "crm-demo-x", "×") as HTMLButtonElement;
+      x.title = "Usuń";
+      x.onclick = () => {
+        wybor.splice(i, 1);
+        rysujWybrane();
+      };
+      wiersz.appendChild(x);
+      wybrane.appendChild(wiersz);
+    });
+    // wysylka dopiero gdy jest co wyslac
+    zapisz.style.display = wybor.length || zapisanych ? "" : "none";
+  };
+
+  const pokazDodawanie = (p: PozycjaCennika) => {
+    doDodania.innerHTML = "";
+    doDodania.style.display = "";
+    doDodania.appendChild(poleIk("crm-demo-dodaj-nazwa", "paczka", p.tytul));
+    const rzadD = el("div", "crm-demo-dodaj-rzad");
+    const ile = document.createElement("input");
+    ile.type = "number";
+    ile.min = "1";
+    ile.value = "1";
+    ile.className = "crm-input";
+    ile.title = "Liczba licencji";
+    const dodaj = el("button", "crm-btn", "Dodaj") as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    rzadD.append(el("span", "crm-label", "Liczba licencji"), ile, dodaj, nie);
+    doDodania.appendChild(rzadD);
+    ile.oninput = () => (dodaj.disabled = !(Number(ile.value) > 0));
+    ile.onkeydown = (e: KeyboardEvent) => { if (e.key === "Enter" && !dodaj.disabled) dodaj.click(); };
+    dodaj.onclick = () => {
+      const juz = wybor.find((w) => w.p === p);
+      if (juz) juz.ile += Number(ile.value);
+      else wybor.push({ p, ile: Number(ile.value) });
+      doDodania.style.display = "none";
+      rysujWybrane();
+      szukaj.focus();
+    };
+    nie.onclick = () => (doDodania.style.display = "none");
+    ile.focus();
+    ile.select();
+  };
+
+  const rysujWyniki = () => {
+    wyniki.innerHTML = "";
+    const q = szukaj.value.trim().toLowerCase();
+    if (q.length < 2) return;
+    cennik
+      .filter((p) => p.tytul.toLowerCase().includes(q))
+      .slice(0, 8)
+      .forEach((p) => {
+        const b = el("button", "crm-demo-wynik", p.tytul) as HTMLButtonElement;
+        b.onclick = () => {
+          szukaj.value = "";
+          wyniki.innerHTML = "";
+          pokazDodawanie(p);
+        };
+        wyniki.appendChild(b);
+      });
+    if (!wyniki.children.length) wyniki.appendChild(el("div", "crm-podpowiedz", "Brak w cenniku."));
+  };
+  szukaj.oninput = rysujWyniki;
+  rysujWybrane();
+
+  try {
+    szukaj.placeholder = "wczytywanie cennika…";
+    cennik = await getCennik();
+    szukaj.placeholder = `wyszukaj licencję (${cennik.length} w cenniku)`;
+    szukaj.focus();
+  } catch (e: any) {
+    szukaj.placeholder = "";
+    box.insertBefore(el("div", "crm-komunikat crm-blad", `Cennik: ${e?.message ?? e}`), szukaj);
+  }
+
+  wstecz.onclick = anuluj;
+
+  zapisz.onclick = async () => {
+    if (!wybor.length && !zapisanych) return;
+    zapisz.disabled = true;
+    wstecz.disabled = true;
+    komunikat.className = "crm-komunikat";
+    try {
+      // jeden wpis w Oferty_TECS na licencje - kazda ze swoja liczba
+      while (wybor.length) {
+        const w = wybor[0];
+        komunikat.textContent = `Zapisywanie: ${w.p.tytul}...`;
+        await createListItem("Oferty_TECS", {
+          ProducID: w.p.nazwa,
+          Liczba_licencji: w.ile,
+          Pocz_x0105_tek_TECS: kody.poczatek || null,
+          Koniec_TECS: kody.koniec || null,
+          FirmaIDofertaTECS: kody.firmaId || c.nazwa,
+          TECSOppsIDoferta: kody.nazwa,
+          IdentyfikatorTECS: kody.guid,
+          IdentyfikatorCompanies: c.guid,
+          Demo: true,
+        });
+        wybor.shift(); // zapisana - przy bledzie ponowna proba nie zdubluje
+        zapisanych++;
+        rysujWybrane();
+      }
+
+      // jak w Power Apps: sa licencje -> DemoOffice = true, czyli zlecenie generowania
+      komunikat.textContent = "Wysyłanie do generowania...";
+      if (!kody.id) throw new Error("licencje zapisane, ale brak id wpisu kodów - zaznacz DemoOffice ręcznie");
+      await updateTicketFields(kody.id, { DemoOffice: true }, undefined, "Opps_TECS");
+      poZapisie();
+    } catch (e: any) {
+      wstecz.disabled = false;
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
 }
 
 async function zakladkaSzanse(box: HTMLElement, s: HTMLElement, c: Company) {
@@ -1993,20 +2635,25 @@ async function zakladkaSzanse(box: HTMLElement, s: HTMLElement, c: Company) {
 
   lista.forEach((o) => {
     const k = el("div", "crm-kafel");
-    k.appendChild(el("div", "crm-kafel-nazwa", o.nazwa));
+    const [kol, tlo]: [string, string] =
+      o.status === "Zamknięty wygrany" ? ["#16A34A", "#E6F6EE"]
+      : o.status === "Zamknięty przegrany" ? ["#DC2626", "#FEE2E2"]
+      : ["#3860B2", "#EEF0FC"];
+    k.style.borderLeftColor = kol;
+
+    const gora = el("div", "crm-kafel-rzad");
+    gora.appendChild(poleIk("crm-kafel-nazwa", "cel", o.nazwa, "Nazwa szansy"));
+    const etap = pastylka(o.status || "—", kol, tlo, "flaga");
+    etap.title = "Etap";
+    gora.appendChild(etap);
+    k.appendChild(gora);
+
     const rzad = el("div", "crm-kafel-rzad");
-    rzad.appendChild(el("span", "crm-kafel-wartosc", euro(o.wartosc)));
-    if (o.typ) rzad.appendChild(pastylka(o.typ, "#2F6FD6", "#E8F0FD"));
+    rzad.appendChild(poleIk("crm-kafel-wartosc", "euro", euro(o.wartosc), "Wartość"));
+    if (o.typ) rzad.appendChild(pastylka(o.typ, "#2F6FD6", "#E8F0FD", "teczka"));
     k.appendChild(rzad);
 
-    const meta = el(
-      "div",
-      "crm-kafel-meta",
-      `Otwarta ${dataPL(o.otwarcie)}` + (o.status === "Aktywny" ? "" : ` · ${o.status}`)
-    );
-    meta.style.color =
-      o.status === "Zamknięty wygrany" ? "#16A34A" : o.status === "Zamknięty przegrany" ? "#DC2626" : "#6B7280";
-    k.appendChild(meta);
+    k.appendChild(poleIk("crm-kafel-meta", "kalendarz", `Otwarta ${dataPL(o.otwarcie)}`, "Data otwarcia"));
     box.appendChild(k);
   });
 }
@@ -2036,25 +2683,30 @@ async function zakladkaPosiadane(box: HTMLElement, s: HTMLElement, c: Company) {
 
   lista.forEach((l) => {
     const k = el("div", "crm-kafel");
+    const d = dniDo(l.koniec);
+    k.style.borderLeftColor = !l.koniec || (d !== null && d < 0) ? "#CFCDCB" : kolorTerminu(d);
+
     const top = el("div", "crm-kafel-rzad");
-    top.appendChild(el("span", "crm-kafel-nazwa", l.nazwa));
-    top.appendChild(el("span", "crm-licencje", `${l.ile} lic.`));
+    top.appendChild(poleIk("crm-kafel-nazwa", "paczka", l.nazwa, "Produkt"));
+    const ile = pastylka(`${l.ile} lic.`, "#0D9488", "#E6F6F4", "licencja");
+    ile.title = "Liczba licencji";
+    top.appendChild(ile);
     k.appendChild(top);
 
-    if (l.opps) k.appendChild(el("div", "crm-kafel-opps", l.opps));
+    if (l.opps) k.appendChild(poleIk("crm-kafel-opps", "dokument", l.opps, "Oferta"));
 
-    const d = dniDo(l.koniec);
-    const meta = el(
-      "div",
+    const meta = poleIk(
       "crm-kafel-meta",
+      "klepsydra",
       !l.koniec
         ? "bez TECS"
-        : `TECS do ${dataPL(l.koniec)}` + (d === null ? "" : ` · ${d < 0 ? "wygasł" : d + " dni"}`)
+        : `TECS do ${dataPL(l.koniec)}` + (d === null ? "" : ` · ${d < 0 ? "wygasł" : d + " dni"}`),
+      "Ważność TECS"
     );
     meta.style.color = d !== null && d < 0 ? "#6B7280" : kolorTerminu(d);
     k.appendChild(meta);
 
-    if (l.tp || l.demo) k.appendChild(pastylka(l.tp ? "TechPool" : "Demo", "#7C3AED", "#F1EAFE"));
+    if (l.tp || l.demo) k.appendChild(pastylka(l.tp ? "TechPool" : "Demo", "#7C3AED", "#F1EAFE", "etykieta"));
     if (d !== null && d >= 0) k.appendChild(pasekTerminu(d));
     box.appendChild(k);
   });
@@ -2063,14 +2715,60 @@ async function zakladkaPosiadane(box: HTMLElement, s: HTMLElement, c: Company) {
 async function zakladkaSzkolenia(box: HTMLElement, s: HTMLElement, c: Company) {
   // uwaga: ta lista uzywa GUIDFirmy, nie IdentyfikatorCompanies
   const items = await getByCompany("UczestnicySzkolen", c.guid, { pole: "GUIDFirmy", top: 100 });
-  const lista = items.map(toSzkolenie).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
-  s.textContent = `Szkolenia — uczestników: ${lista.length}`;
-  if (!lista.length) return pusto(box, "Brak szkoleń dla tej firmy.");
+  const lista = items.map(toSzkolenie);
+  if (!lista.length) {
+    s.textContent = "Szkolenia";
+    return pusto(box, "Brak szkoleń dla tej firmy.");
+  }
 
+  // lista ma wiersz na uczestnika - grupujemy w jedno szkolenie z lista osob
+  const czas = (d: string) => {
+    const t = Date.parse(d);
+    return isNaN(t) ? 0 : t;
+  };
+  const grupy = new Map<string, { nazwa: string; data: string; osoby: string[] }>();
   lista.forEach((z) => {
-    const k = el("div", "crm-kafel");
-    k.appendChild(el("div", "crm-kafel-nazwa", z.nazwa));
-    k.appendChild(el("div", "crm-kafel-meta", `${z.data} · ${z.osoba}`));
+    const klucz = `${z.nazwa}|${z.data}`;
+    const g = grupy.get(klucz) ?? { nazwa: z.nazwa, data: z.data, osoby: [] };
+    if (z.osoba) g.osoby.push(z.osoba);
+    grupy.set(klucz, g);
+  });
+  const szkolenia = [...grupy.values()].sort((a, b) => czas(b.data) - czas(a.data)); // najnowsze u gory
+
+  s.textContent = `Szkolenia — ${szkolenia.length} · uczestników: ${lista.length}`;
+
+  const dzis = new Date();
+  dzis.setHours(0, 0, 0, 0);
+
+  szkolenia.forEach((g) => {
+    const k = el("div", "crm-szkolenie");
+
+    const top = el("div", "crm-szkolenie-top");
+    const tytul = el("div", "crm-szkolenie-nazwa");
+    tytul.title = "Szkolenie";
+    tytul.append(ikona("czapka"), el("span", "crm-ikona-txt", g.nazwa || "(bez nazwy)"));
+    top.appendChild(tytul);
+    if (czas(g.data) >= dzis.getTime()) top.appendChild(el("span", "crm-szkolenie-nowe", "nadchodzące"));
+    k.appendChild(top);
+
+    if (g.data) {
+      const data = el("div", "crm-szkolenie-data");
+      data.title = "Data szkolenia";
+      data.append(ikona("kalendarz"), el("span", undefined, czas(g.data) ? formatData(g.data) : g.data));
+      k.appendChild(data);
+    }
+
+    if (g.osoby.length) {
+      const osoby = el("div", "crm-szkolenie-osoby");
+      osoby.title = "Uczestnicy";
+      g.osoby.sort((a, b) => a.localeCompare(b, "pl")).forEach((o) => {
+        const chip = el("span", "crm-szkolenie-osoba");
+        chip.append(ikona("osoba"), el("span", undefined, o));
+        osoby.appendChild(chip);
+      });
+      k.appendChild(osoby);
+    }
+
     box.appendChild(k);
   });
 }
@@ -2178,6 +2876,7 @@ async function pokazKontakty() {
 async function odswiez() {
   if (widok === "firmy") {
     wyczyscCacheFirm();
+    void getLiczbaSupportowRok(true);
     return pokazFirmy();
   }
   if (widok === "kontakty") {

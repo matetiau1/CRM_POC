@@ -258,7 +258,7 @@ content: "";
 }
 .crm-card.crm-open::before { top: 6px; bottom: 6px; }
 
-.crm-card-top { display: flex; align-items: baseline; gap: 8px; }
+.crm-card-top { display: flex; align-items: center; gap: 8px; }
 
 .crm-firma {
   font-family: var(--crm-font-naglowek);
@@ -275,11 +275,11 @@ content: "";
   white-space: nowrap;
 }
 
-.crm-row { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.crm-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 .crm-osoba { font-size: var(--crm-t-maly); color: var(--crm-tekst); }
 .crm-czas { margin-left: auto; font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
 
-.crm-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 3px; }
+.crm-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
 
 .crm-opis {
   font-size: var(--crm-t-mini);
@@ -295,7 +295,46 @@ content: "";
 
 .crm-foot { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
 .crm-data { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
-.crm-lock { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+/* otwarte - zielona pastylka, zamkniete - szara */
+.crm-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--crm-r-pill);
+  color: var(--crm-c-ok);
+  background: var(--crm-c-ok-tlo);
+  border: 1px solid var(--crm-c-ok-linia);
+}
+.crm-lock .crm-ikona { width: 12px; height: 12px; }
+.crm-lock.crm-lock-zamk {
+  color: var(--crm-tekst-2);
+  background: var(--crm-tlo-3);
+  border-color: var(--crm-linia);
+}
+
+/* pola karty z ikona: firma, zglaszajacy, obslugujacy, czas, data */
+.crm-card-head .crm-firma,
+.crm-card-head .crm-osoba,
+.crm-card-head .crm-opiekun,
+.crm-card-head .crm-czas,
+.crm-card-head .crm-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.crm-card-head .crm-ikona-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-card-head .crm-ikona { color: var(--crm-tekst-3); }
+.crm-card-head .crm-firma .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
+.crm-card-head .crm-opiekun .crm-ikona { color: var(--crm-brand); }
 
 /* kolor tla nadawany z JS - tu tylko kształt */
 .crm-chip {
@@ -566,6 +605,44 @@ content: "";
 .crm-adres { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 4px; line-height: 1.55; }
 .crm-firma-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 5px; }
 
+/* karta firmy z ikonami: nazwa, adres, opiekun */
+.crm-firma-card .crm-firma-top { align-items: center; }
+.crm-firma-card .crm-firma-nazwa,
+.crm-firma-card .crm-adres,
+.crm-firma-card .crm-firma-opiekun {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.crm-firma-card .crm-firma-nazwa { align-items: center; }
+.crm-firma-card .crm-firma-nazwa .crm-ikona-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-firma-card .crm-adres .crm-ikona-txt { white-space: pre-line; }
+.crm-firma-card .crm-ikona { color: var(--crm-tekst-3); margin-top: 2px; }
+.crm-firma-card .crm-firma-nazwa .crm-ikona { width: 15px; height: 15px; margin-top: 0; color: var(--crm-brand); }
+.crm-firma-card .crm-firma-opiekun .crm-ikona { color: var(--crm-brand); }
+
+/* liczba supportow z ostatniego roku */
+.crm-firma-card .crm-firma-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 2px 9px 2px 7px;
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand-hover);
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+}
+.crm-firma-card .crm-firma-stat .crm-ikona { width: 12px; height: 12px; margin-top: 0; color: currentColor; }
+.crm-firma-card .crm-firma-stat-zero { background: var(--crm-tlo-3); color: var(--crm-tekst-3); }
+
 /* ---------- 13. PODNAWIGACJA (segmented control) ---------- */
 
 .crm-podnav {
@@ -622,11 +699,31 @@ content: "";
 }
 
 .crm-kontakt-linia {
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
   font-size: var(--crm-t-mini);
   color: var(--crm-brand);
   margin-top: 4px;
   text-decoration: none;
+}
+.crm-kontakt-linia > span:not(.crm-blysk) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-ikona {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .crm-kontakt-linia:hover { color: var(--crm-brand-hover); text-decoration: underline; }
 .crm-tel:hover { text-decoration: underline; }
@@ -945,7 +1042,12 @@ content: "";
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.crm-zakladka:hover { background: #F3F4F6; }
+/* hover wygrywa z aktywna zakladka, wiec kolor tekstu tez musi byc ustawiony */
+.crm-zakladka:hover {
+  background: var(--crm-brand-tlo);
+  border-color: var(--crm-brand);
+  color: var(--crm-brand);
+}
 .crm-zakladka-akt {
   background: #3860B2;
   border-color: #3860B2;
@@ -1117,6 +1219,18 @@ content: "";
   border-color: var(--crm-tekst-3);
 }
 .crm-chip-wybor:active { transform: scale(.97); }
+
+/* rodzaj notatki - siatka rownych kafelkow zamiast chipow roznej dlugosci */
+.crm-chipy-rowne {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.crm-chipy-rowne .crm-chip-wybor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  padding: 5px 6px;
+}
 
 .crm-chip-akt,
 .crm-chip-wybor.crm-chip-akt:hover {
@@ -1295,12 +1409,11 @@ content: "";
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crm-dol-btn:hover { color: var(--crm-tekst); background: var(--crm-tlo-2); }
+.crm-dol-btn svg { transition: transform var(--crm-e-szybko); }
 .crm-dol-btn:focus-visible { outline-offset: -3px; }
 
-/* aktywny widok: kolor marki + belka u gory */
-.crm-dol-btn.crm-dol-akt { color: var(--crm-brand); }
-.crm-dol-btn.crm-dol-akt::before {
+/* belka u gory: pelna przy aktywnym widoku, zapowiedz przy najezdzie */
+.crm-dol-btn::before {
   content: "";
   position: absolute;
   top: 0;
@@ -1309,6 +1422,25 @@ content: "";
   height: 3px;
   border-radius: 0 0 3px 3px;
   background: var(--crm-brand);
+  transform: scaleX(0);
+  opacity: 0;
+  transition: transform var(--crm-e-szybko), opacity var(--crm-e-szybko);
+}
+
+@media (hover: hover) {
+  .crm-dol-btn:hover { color: var(--crm-brand); background: var(--crm-brand-tlo); }
+  .crm-dol-btn:hover svg { transform: translateY(-2px); }
+  .crm-dol-btn:hover::before { transform: scaleX(.5); opacity: .5; }
+}
+.crm-dol-btn:active svg { transform: scale(.92); }
+
+/* aktywny widok: kolor marki + belka u gory */
+.crm-dol-btn.crm-dol-akt { color: var(--crm-brand); }
+.crm-dol-btn.crm-dol-akt::before { transform: scaleX(1); opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-dol-btn svg, .crm-dol-btn::before { transition: none; }
+  .crm-dol-btn:hover svg, .crm-dol-btn:active svg { transform: none; }
 }
 
 /* miejsce na pasek - tresc nie chowa sie pod nim */
@@ -1326,3 +1458,303 @@ content: "";
   cursor: pointer;
 }
 .crm-kontakt-firma:hover { color: var(--crm-brand-hover); text-decoration: underline; }
+
+/* ---------- 24. SZKOLENIA (karta szkolenia z lista uczestnikow) ---------- */
+.crm-szkolenie {
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-left: var(--crm-szyna) solid var(--crm-brand);
+  border-radius: var(--crm-r-m);
+  padding: 9px 12px 10px;
+  margin-bottom: 8px;
+}
+.crm-szkolenie-top { display: flex; align-items: center; gap: 8px; }
+.crm-szkolenie-nazwa {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-maly);
+  font-weight: 600;
+  color: var(--crm-tekst);
+}
+.crm-szkolenie-nazwa .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
+.crm-szkolenie-nazwa .crm-ikona-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-szkolenie-nowe {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--crm-r-pill);
+  color: var(--crm-c-ok);
+  background: var(--crm-c-ok-tlo);
+  border: 1px solid var(--crm-c-ok-linia);
+}
+.crm-szkolenie-data {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
+}
+.crm-szkolenie-data .crm-ikona { color: var(--crm-tekst-3); }
+.crm-szkolenie-osoby {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--crm-linia);
+}
+.crm-szkolenie-osoba {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-tlo-3);
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
+  color: var(--crm-tekst-2);
+}
+.crm-szkolenie-osoba .crm-ikona { width: 11px; height: 11px; color: var(--crm-tekst-3); }
+
+/* ---------- 25. POLA Z IKONAMI (karta firmy, notatki, TECS, szanse, posiadane) ---------- */
+.crm-ik {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.crm-ik .crm-ikona { color: var(--crm-tekst-3); }
+.crm-ik .crm-ikona-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crm-pill { display: inline-flex; align-items: center; gap: 4px; }
+.crm-pill .crm-ikona { width: 11px; height: 11px; flex: none; }
+
+/* karta z danymi firmy */
+.crm-firma-karta {
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-left: var(--crm-szyna) solid var(--crm-brand);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 12px;
+  margin-top: 6px;
+  box-shadow: var(--crm-cien-1);
+}
+.crm-firma-karta .crm-firma-tytul {
+  margin-top: 0;
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
+  color: var(--crm-tekst);
+}
+.crm-firma-karta .crm-firma-tytul .crm-ikona { width: 17px; height: 17px; color: var(--crm-brand); }
+.crm-firma-karta .crm-firma-tytul .crm-ikona-txt { white-space: normal; }
+.crm-firma-karta .crm-firma-pelna { margin: 2px 0 0 23px; color: var(--crm-tekst-2); }
+.crm-firma-adres {
+  margin-top: 6px;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
+}
+.crm-akcja {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  background: var(--crm-tlo-3);
+  color: var(--crm-tekst-2);
+  font-weight: 500;
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
+}
+.crm-akcja:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
+.crm-akcja .crm-ikona { width: 13px; height: 13px; flex: none; }
+.crm-akcja span { overflow: hidden; text-overflow: ellipsis; }
+.crm-licznik { background: var(--crm-tlo-2); border: 1px solid var(--crm-linia); }
+.crm-licznik-lbl { gap: 4px; }
+.crm-licznik-lbl .crm-ikona { width: 11px; height: 11px; }
+
+/* kafle TECS / szanse / posiadane - szyna w kolorze etapu nadawana z JS */
+.crm-kafel {
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-left: var(--crm-szyna) solid var(--crm-brand);
+  border-radius: var(--crm-r-m);
+  padding: 9px 12px 10px;
+  margin-bottom: 8px;
+}
+.crm-kafel .crm-kafel-rzad { margin-top: 0; }
+.crm-kafel .crm-kafel-rzad + .crm-kafel-rzad,
+.crm-kafel .crm-kafel-rzad + .crm-ik { margin-top: 6px; }
+.crm-kafel .crm-pill { flex: none; font-weight: 600; }
+.crm-kafel-nazwa {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-maly);
+  color: var(--crm-tekst);
+}
+.crm-kafel-nazwa .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
+.crm-kafel-wartosc { font-size: var(--crm-t-baza); color: var(--crm-tekst); }
+.crm-kafel-wartosc .crm-ikona { color: var(--crm-c-ok); }
+.crm-kafel-meta { font-size: var(--crm-t-mini); margin-top: 6px; }
+.crm-kafel-meta .crm-ikona { color: currentColor; }
+.crm-kafel-opps { font-size: var(--crm-t-mini); color: var(--crm-tekst-3); margin-top: 4px; }
+.crm-kafel > .crm-pill { margin-top: 6px; }
+
+/* notatki */
+.crm-nota {
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-m);
+  padding: 9px 12px 10px;
+  margin-bottom: 8px;
+}
+.crm-nota-top { align-items: center; gap: 8px; }
+.crm-nota-data { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
+.crm-nota-prawo { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+.crm-nota-typ {
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand-hover);
+  white-space: nowrap;
+}
+.crm-usun .crm-ikona { width: 13px; height: 13px; display: block; }
+.crm-nota-osoba { margin-top: 6px; font-size: var(--crm-t-mini); color: var(--crm-tekst); }
+.crm-nota-osoba .crm-ikona { color: var(--crm-brand); }
+.crm-nota-fu { margin-top: 6px; }
+.crm-nota-tresc {
+  display: flex;
+  gap: 6px;
+  max-height: none;
+  overflow: visible;
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: var(--crm-tlo-2);
+  border-radius: var(--crm-r-s);
+}
+.crm-nota-tresc .crm-ikona { flex: none; margin-top: 2px; color: var(--crm-tekst-3); }
+.crm-nota-tresc-txt {
+  min-width: 0;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.crm-nota-autor { margin-top: 7px; font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-nota-autor .crm-ikona { width: 12px; height: 12px; }
+
+/* ---------- 26. KODY DEMO (formularz kodow i licencji z cennika) ---------- */
+.crm-demo-pasek { margin: 0 0 8px; }
+.crm-demo-pasek .crm-btn,
+.crm-kafel .crm-akcje .crm-btn { display: inline-flex; align-items: center; gap: 5px; }
+.crm-demo-pasek .crm-ikona,
+.crm-kafel .crm-akcje .crm-ikona { width: 13px; height: 13px; }
+.crm-demo { margin-bottom: 10px; }
+.crm-demo-tytul {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-baza);
+  font-weight: 600;
+  color: var(--crm-tekst);
+  margin-bottom: 2px;
+}
+.crm-demo-tytul .crm-ikona { width: 16px; height: 16px; color: #7C3AED; }
+.crm-demo-okres {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.crm-demo-wyniki {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 6px;
+}
+.crm-demo-wynik {
+  text-align: left;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  padding: 6px 9px;
+  font-family: inherit;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+  cursor: pointer;
+}
+.crm-demo-wynik:hover { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-demo-wybrane:empty { display: none; }
+.crm-demo-x {
+  background: none;
+  border: 0;
+  padding: 0 0 0 2px;
+  font-size: var(--crm-t-maly);
+  line-height: 1;
+  color: var(--crm-tekst-3);
+  cursor: pointer;
+}
+.crm-demo-x:hover { color: var(--crm-c-blad); }
+
+/* lista licencji z liczba sztuk */
+.crm-demo-dodaj {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  background: var(--crm-brand-tlo);
+  border: 1px solid var(--crm-brand);
+  border-radius: var(--crm-r-s);
+}
+.crm-demo-dodaj-nazwa { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
+.crm-demo-dodaj-nazwa .crm-ikona { color: var(--crm-brand); }
+.crm-demo-dodaj-rzad { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.crm-demo-dodaj-rzad .crm-label { margin: 0; white-space: nowrap; }
+.crm-demo-dodaj-rzad .crm-input { width: 64px; margin: 0; }
+.crm-demo-lista { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.crm-demo-poz {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--crm-tlo-2);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+}
+.crm-demo-poz .crm-ikona { width: 13px; height: 13px; flex: none; color: var(--crm-tekst-3); }
+.crm-demo-poz .crm-ikona-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-demo-ile {
+  flex: none;
+  font-weight: 700;
+  color: var(--crm-brand);
+  background: var(--crm-brand-tlo);
+  border-radius: var(--crm-r-pill);
+  padding: 1px 7px;
+}
+
+/* kafelek "Nowe kody demo" na cala szerokosc siatki zakladek */
+.crm-zakladka-szeroka {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #7C3AED;
+  background: #F1EAFE;
+  border-color: #E1D3FC;
+}
+.crm-zakladka-szeroka .crm-ikona { width: 13px; height: 13px; flex: none; }
+.crm-zakladka-szeroka:hover { color: #7C3AED; background: #E9DCFD; border-color: #7C3AED; }
