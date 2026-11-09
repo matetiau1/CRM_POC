@@ -438,12 +438,14 @@ content: "";
 
 /* ---------- 9. PRZYCISKI ---------- */
 
-.crm-akcje { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+/* przyciski w rzedzie tej samej wysokosci, takze gdy tekst jednego zawija sie do dwoch linii */
+.crm-akcje { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; }
+.crm-akcje > .crm-komunikat { align-self: center; }
 
 .crm-btn {
   background: var(--crm-brand);
   color: #fff;
-  border: 0;
+  border: 1px solid transparent; /* ta sama wysokosc co .crm-btn-cichy z ramka */
   border-radius: var(--crm-r-s);
   padding: 7px 14px;
   font-size: var(--crm-t-maly);
@@ -1839,3 +1841,269 @@ content: "";
 .crm-kat-lista { padding: 2px 8px 8px; }
 .crm-kat-lista .crm-pusto { margin: 4px 2px; }
 .crm-kat-wiecej { width: 100%; margin-top: 4px; }
+
+/* ---------- 29. SZANSE FIRMY NADAWCY (notatki do szans) ---------- */
+.crm-dol.crm-dol-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.crm-dol-btn[hidden] { display: none; }
+
+.crm-szanse-firma {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  background: var(--crm-brand-tlo);
+  border: 1px solid #D9E1F2;
+  border-radius: var(--crm-r-m);
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-baza);
+  font-weight: 600;
+  color: var(--crm-tekst);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--crm-anim), color var(--crm-anim);
+}
+.crm-szanse-firma .crm-ikona { width: 16px; height: 16px; flex: none; color: var(--crm-brand); }
+.crm-szanse-firma:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
+
+.crm-szansa-akcje { flex-wrap: wrap; }
+.crm-szansa-akcje .crm-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; }
+.crm-szansa-akcje .crm-ikona { width: 13px; height: 13px; }
+.crm-btn-cichy.crm-btn-wcisniety { color: var(--crm-brand); border-color: var(--crm-brand); background: var(--crm-brand-tlo); }
+.crm-szansa-noty { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.crm-szansa-noty .crm-nota { margin: 0; }
+.crm-kafel .crm-nowe { margin: 8px 0 0; }
+
+/* ---------- 30. RODZAJE NOTATEK - ikony zamiast emoji ---------- */
+.crm-chip-rodzaj {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+.crm-chip-rodzaj .crm-ikona { width: 13px; height: 13px; flex: none; }
+.crm-chip-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crm-nota-typ { display: inline-flex; align-items: center; gap: 4px; }
+.crm-nota-typ .crm-ikona { width: 11px; height: 11px; flex: none; }
+
+/* zapis otwartego maila do notatki (rodzaj "mail") */
+.crm-mail-opcja {
+  margin: 8px 0 4px;
+  padding: 2px 10px 8px;
+  background: var(--crm-tlo);
+  border: 1px dashed var(--crm-linia-mocna);
+  border-radius: var(--crm-r-s);
+}
+.crm-mail-opcja-info { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 2px; }
+.crm-mail-opcja-info .crm-ikona { color: var(--crm-brand); }
+.crm-mail-opcja-info .crm-ikona-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* edycja wlasnej notatki - olowek obok kosza */
+.crm-edytuj .crm-ikona { width: 13px; height: 13px; display: block; }
+.crm-usun.crm-edytuj:hover { color: var(--crm-brand); background: var(--crm-brand-tlo); }
+
+/* ---------- 31. ZARZADZANIE SZANSA (status i etapy) ---------- */
+.crm-szansa-panel {
+  margin-top: 8px;
+  padding: 0 10px 10px;
+  background: var(--crm-tlo-2);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+}
+.crm-szansa-panel .crm-nf-sekcja:first-child { border-top: 0; margin-top: 4px; }
+.crm-szansa-statusy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
+.crm-szansa-status {
+  padding: 6px 4px;
+  border: 1px solid var(--kol);
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo);
+  color: var(--kol);
+  font-family: inherit;
+  font-size: var(--crm-t-mini);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--crm-e-szybko);
+}
+.crm-szansa-status:hover { background: var(--tlo); }
+.crm-szansa-status.crm-szansa-status-akt { background: var(--kol); color: #fff; }
+.crm-szansa-forma { margin: 8px 0 0; background: var(--crm-tlo); }
+.crm-szansa-etapy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 6px; }
+.crm-szansa-krok {
+  padding: 5px 8px;
+  border: 1px solid #E5E7EB;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo);
+  color: #374151;
+  font-family: inherit;
+  font-size: var(--crm-t-mini);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crm-szansa-krok:hover { border-color: #5B6CDB; color: #5B6CDB; }
+.crm-szansa-krok.crm-krok-ok { background: #E6F6EE; border-color: #A7DCC0; color: #16A34A; }
+.crm-szansa-krok.crm-krok-biez { background: #5B6CDB; border-color: #5B6CDB; color: #fff; font-weight: 600; cursor: default; }
+.crm-szansa-panel > .crm-komunikat { display: block; margin-top: 6px; }
+.crm-szansa-panel > .crm-komunikat:empty { display: none; }
+
+/* pasek postepu etapu na karcie szansy - 8 odcinkow */
+.crm-szansa-postep { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin: 5px 0 6px; }
+.crm-szansa-odc { height: 5px; border-radius: 3px; background: var(--crm-tlo-3); }
+
+/* dane etapu - zakladki 1-8 i pola */
+.crm-szansa-zakladki { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 6px 0 4px; }
+.crm-szansa-zakl {
+  position: relative;
+  padding: 4px 8px;
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo);
+  color: var(--crm-tekst-2);
+  font-family: inherit;
+  font-size: var(--crm-t-mini);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.crm-szansa-zakl:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-szansa-zakl.crm-zakl-akt { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); font-weight: 600; }
+.crm-szansa-zakl.crm-zakl-zmiany { box-shadow: inset 3px 0 0 #D97706; }
+.crm-szansa-pola { margin-top: 4px; }
+.crm-szansa-link { display: block; font-size: var(--crm-t-mini); word-break: break-all; margin-bottom: 10px; }
+
+/* ---------- 32. PRODUKTY TECS ---------- */
+.crm-tecs-produkty {
+  margin-top: 8px;
+  padding: 8px 10px 10px;
+  background: var(--crm-tlo-2);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+}
+.crm-tecs-lista { display: flex; flex-direction: column; gap: 5px; }
+.crm-tecs-poz {
+  padding: 6px 9px;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+}
+.crm-tecs-poz:hover { border-color: #A5B0F0; }
+.crm-tecs-poz-gora { display: flex; align-items: center; gap: 8px; }
+.crm-tecs-poz-nazwa { flex: 1; min-width: 0; font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
+.crm-tecs-poz-nazwa .crm-ikona-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-tecs-poz-nazwa .crm-ikona { color: #0D9488; }
+.crm-tecs-poz-suma { flex: none; font-size: var(--crm-t-mini); font-weight: 700; color: var(--crm-tekst); }
+.crm-tecs-poz-linia {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 2px;
+  font-size: var(--crm-t-mikro);
+  color: var(--crm-tekst-2);
+}
+.crm-tecs-cena { font-weight: 600; color: var(--crm-tekst); }
+.crm-tecs-cena-nizsza { color: #DC2626; }
+.crm-tecs-cena-ok { color: #16A34A; }
+.crm-tecs-poz-akcje { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+.crm-tecs-poz-akcje .crm-usun { opacity: 1; font-size: var(--crm-t-mikro); }
+.crm-tecs-poz-akcje .crm-usun:disabled { opacity: .4; cursor: default; }
+.crm-tecs-poz-akcje .crm-btn { padding: 4px 10px; }
+.crm-tecs-pytanie { flex: 1; font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-c-blad); }
+.crm-tecs-stopka {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 16px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--crm-linia);
+}
+.crm-tecs-stopka-et { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-tecs-stopka-war { font-size: var(--crm-t-maly); font-weight: 700; color: var(--crm-tekst); }
+.crm-tecs-stopka .crm-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; }
+.crm-tecs-stopka .crm-ikona { width: 13px; height: 13px; }
+.crm-tecs-stary .crm-btn { flex: none; padding: 3px 10px; }
+
+/* przycisk "Nowa szansa TECS" nad lista TECS */
+.crm-tecs-nowy { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; }
+.crm-tecs-nowy .crm-ikona { width: 14px; height: 14px; }
+
+/* formularz produktu TECS - podglad wyliczen */
+.crm-tecs-forma { margin: 6px 0; }
+.crm-tecs-podglad {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 2px 0 8px;
+  padding: 6px 9px;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
+}
+.crm-tecs-podglad > div:first-child { font-weight: 700; color: var(--crm-tekst); }
+.crm-tecs-dodaj { margin-top: 8px; }
+.crm-tecs-dodaj .crm-tecs-nowy { margin: 0; }
+
+/* produkty z wygranej szansy w formularzu nowego TECS */
+.crm-tecs-prop { margin: 4px 0; flex-wrap: wrap; }
+.crm-tecs-prop-nazwa { font-weight: 600; color: var(--crm-tekst); }
+.crm-tecs-prop-cena { margin-left: auto; font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
+
+/* ---------- 33. SZCZEGOLY TECS (kafle, etap, uwagi) ---------- */
+.crm-tecs-szcz-opis { margin: 6px 0 2px; font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
+.crm-tecs-link { text-decoration: none; padding: 4px 10px; }
+.crm-tecs-kafle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.crm-tecs-kafel {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 8px;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+}
+.crm-tecs-kafel > .crm-ikona { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+.crm-tecs-kafel-tresc { min-width: 0; }
+.crm-tecs-kafel-et { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-tecs-kafel-war {
+  font-size: var(--crm-t-mini);
+  font-weight: 700;
+  color: var(--crm-tekst);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-tecs-kafel-dop { font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
+.crm-szansa-krok.crm-krok-rezygnacja { grid-column: 1 / -1; color: #DC2626; border-color: #F8B4B4; }
+.crm-szansa-krok.crm-krok-rezygnacja:hover { border-color: #DC2626; background: #FEE2E2; color: #DC2626; }
+.crm-szansa-krok.crm-krok-rez-akt { background: #DC2626; border-color: #DC2626; color: #fff; font-weight: 600; cursor: default; }
+.crm-tecs-uwagi {
+  margin-top: 6px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+}
+.crm-tecs-uwagi-brak { color: var(--crm-tekst-3); }
+
+/* renewal TECS - podsumowanie poprzedniego */
+.crm-tecs-poprzedni {
+  margin: 0 0 6px;
+  padding: 7px 9px;
+  background: var(--crm-tlo);
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+}

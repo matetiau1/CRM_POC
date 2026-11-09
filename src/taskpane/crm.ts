@@ -218,10 +218,12 @@ export type Nota = {
   data: string;
   osoba: string;
   rodzaj: string;
+  rodzajId: string;     // TypeLookupId - do edycji
   tresc: string;
   autor: string;
   followUp: string;
   followDone: boolean;
+  opps: string;         // Opps_ID - GUID szansy, gdy notatka dotyczy szansy
 };
 
 export function toNota(item: ListItem): Nota {
@@ -231,10 +233,12 @@ export function toNota(item: ListItem): Nota {
     data: s(f.Data),
     osoba: s(f.Osoba),
     rodzaj: s(f.Rodzaj1) || s(f.Type),
+    rodzajId: s(f.TypeLookupId),
     tresc: s(f.Totatka),               // uwaga: literowka w nazwie kolumny
     autor: s(f.Creator),
     followUp: s(f.Follow_up),
     followDone: f.FollowUpStatus === true,
+    opps: s(f.Opps_ID),
   };
 }
 
@@ -251,6 +255,10 @@ export type TecsRow = {
   guid: string;       // TECSGUID - laczy z licencjami w Oferty_TECS
   firmaId: string;    // FirmaID
   odbiorca: string;   // Odbiorca_oferty - dla kogo kody demo
+  guidOld: string;    // TECSGUID_OLD - poprzedni TECS, z ktorego mozna przepisac licencje
+  followUp: string;   // Data_Follow_Up
+  etag: string;       // @odata.etag - kontrola wspolbieznosci przy zmianie etapu / edycji
+  pola: Record<string, unknown>; // surowe pola - do widoku szczegolow i edycji
 };
 
 export function toTecs(item: ListItem): TecsRow {
@@ -268,6 +276,48 @@ export function toTecs(item: ListItem): TecsRow {
     guid: s(f.TECSGUID),
     firmaId: s(f.FirmaID),
     odbiorca: s(f.Odbiorca_oferty),
+    guidOld: s(f.TECSGUID_OLD),
+    followUp: s(f.Data_Follow_Up),
+    etag: s(f["@odata.etag"] ?? (item as any)["@odata.etag"]),
+    pola: f,
+  };
+}
+
+/** Pozycja produktowa TECS (Oferty_TECS). */
+export type ProduktTecs = {
+  id: string;
+  produkt: string;     // ProducID (sic) - nazwa licencji z cennika
+  ile: number;
+  cena: number;        // Cena_TECS - cena jednostkowa
+  rabat: number;
+  tpValue: number;
+  leaseValue: number;
+  suma: number;        // SUMA
+  tp: boolean;
+  lease: boolean;
+  leaseDni: number;    // LeaseDays
+  koniec: string;
+  firmaId: string;     // FirmaIDofertaTECS
+  oppsId: string;      // TECSOppsIDoferta
+};
+
+export function toProduktTecs(item: ListItem): ProduktTecs {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id),
+    produkt: s(f.ProducID),
+    ile: n(f.Liczba_licencji),
+    cena: n(f.Cena_TECS),
+    rabat: n(f.Rabat),
+    tpValue: n(f.TPValue),
+    leaseValue: n(f.LeaseValue),
+    suma: n(f.SUMA),
+    tp: f.TP === true,
+    lease: f.Lease === true,
+    leaseDni: n(f.LeaseDays),
+    koniec: s(f.Koniec_TECS),
+    firmaId: s(f.FirmaIDofertaTECS),
+    oppsId: s(f.TECSOppsIDoferta),
   };
 }
 
@@ -278,6 +328,12 @@ export type Szansa = {
   status: string;
   typ: string;
   otwarcie: string;
+  guid: string;         // OPPSGUID -> Notes.Opps_ID
+  firma: string;        // Firma - etykieta firmy, idzie do notatki
+  etap: string;         // Etap1 - etap sprzedazy (stepper), idzie tez do notatki
+  companyGuid: string;  // IdentyfikatorCompanies
+  etag: string;         // @odata.etag - kontrola wspolbieznosci przy zmianie statusu/etapu
+  pola: Record<string, unknown>; // surowe pola - status zamkniecia czytamy po nazwie wewnetrznej
 };
 
 export function toSzansa(item: ListItem): Szansa {
@@ -289,6 +345,12 @@ export function toSzansa(item: ListItem): Szansa {
     status: s(f.Status1),
     typ: s(f.TypBiznesu),
     otwarcie: s(f.Dataotwarcia),
+    guid: s(f.OPPSGUID),
+    firma: s(f.Firma),
+    etap: s(f.Etap1),
+    companyGuid: s(f.IdentyfikatorCompanies),
+    etag: s(f["@odata.etag"] ?? (item as any)["@odata.etag"]),
+    pola: f,
   };
 }
 
@@ -373,7 +435,10 @@ export const ETAP_KOLORY: Record<string, [string, string]> = {
   "Przygotowanie oferty": ["#D97706", "#FEF3E2"],
   "Oferta wysłana": ["#2F6FD6", "#E8F0FD"],
   "Zamówione": ["#16A34A", "#E6F6EE"],
+  "Wystawiona faktura": ["#0D9488", "#E0F5F3"],
   "Rezygnacja z TECS": ["#DC2626", "#FEE2E2"],
+  "Tech Pool": ["#5B6CDB", "#EEF0FC"],
+  "Koniec Tech Poola": ["#6B7280", "#F3F4F6"],
   "Demo": ["#7C3AED", "#F1EAFE"],
 };
 

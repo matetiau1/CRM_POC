@@ -217,6 +217,23 @@ export async function getChoiceOptions(listName: string, column: string): Promis
 }
 
 /**
+ * Nazwa wewnetrzna kolumny: jesli klucz jest juz nazwa wewnetrzna - bez zmian,
+ * inaczej szukamy po nazwie wyswietlanej (np. "ZamkniętyOppsNotes" -> "Zamkni_x0119_tyOppsNotes").
+ */
+const kolumnyListCache = new Map<string, Promise<ColumnDef[]>>();
+
+export async function nazwaWewnetrzna(listName: string, klucz: string): Promise<string> {
+  let p = kolumnyListCache.get(listName);
+  if (!p) {
+    p = getListColumns(listName);
+    kolumnyListCache.set(listName, p);
+    p.catch(() => kolumnyListCache.delete(listName));
+  }
+  const kol = await p;
+  return (kol.find((c) => c.name === klucz) ?? kol.find((c) => c.displayName === klucz))?.name ?? klucz;
+}
+
+/**
  * Kolumna typu lookup po nazwie wyswietlanej: jej nazwa wewnetrzna i pozycje
  * listy, na ktora wskazuje (odpowiednik Choices() na lookupie w Power Apps).
  */
@@ -289,7 +306,7 @@ export async function updateTicketFields(
   });
 
   if (r.status === 412) {
-    throw new Error("Ktoś zmienił to zgłoszenie w międzyczasie. Odśwież i spróbuj ponownie.");
+    throw new Error("Ktoś zmienił ten rekord w międzyczasie. Odśwież i spróbuj ponownie.");
   }
   if (!r.ok) {
     const body = await r.text();
@@ -700,6 +717,59 @@ export async function getSiteUserId(email: string): Promise<number | null> {
 
   if (id !== null) siteUserCache.set(mail, id);
   return id;
+}
+
+/**
+ * Ceny z cennika: Title (i Nazwa) -> " TECS Fee " i " Annual Lease". Kolumny maja spacje w nazwie
+ * wyswietlanej (import z Excela), a ceny sa tekstem z przecinkiem - stad parsowanie.
+ */
+export type CenaTecs = { tecs: number; lease: number };
+let cenyTecsCache: Promise<Map<string, CenaTecs>> | null = null;
+
+export function liczbaZCennika(v: unknown): number {
+  const n = Number(String(v ?? "").replace(/[\s\u00a0]/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function getCenyTecs(): Promise<Map<string, CenaTecs>> {
+  if (cenyTecsCache) return cenyTecsCache;
+  cenyTecsCache = (async () => {
+    const kolumny = await getListColumns("Cennik_CRM");
+    const szukaj = (nazwa: string) => kolumny.find((c) => c.displayName.trim().toLowerCase() === nazwa);
+    const kol = szukaj("tecs fee");
+    if (!kol) throw new Error("brak kolumny „TECS Fee” w Cennik_CRM");
+    const kolLease = szukaj("annual lease");
+
+    const token = await getToken();
+    const siteId = await getSiteId(token);
+    const listId = await getListId(siteId, "Cennik_CRM", token);
+    const mapa = new Map<string, CenaTecs>();
+    const pola = ["Title", "Nazwa", kol.name, kolLease?.name].filter(Boolean).join(",");
+    let url: string | null =
+      `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields(select=${pola})&$top=999`;
+    let strony = 0;
+    while (url && strony < 20) {
+      const r: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(`Graph ${r.status}: ${(await r.text()).slice(0, 300)}`);
+      const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+      dane.value.forEach((it) => {
+        const f = it.fields as Record<string, unknown>;
+        const cena: CenaTecs = {
+          tecs: liczbaZCennika(f[kol.name]),
+          lease: kolLease ? liczbaZCennika(f[kolLease.name]) : 0,
+        };
+        [f.Title, f.Nazwa].forEach((k) => {
+          const klucz = String(k ?? "").trim();
+          if (klucz && !mapa.has(klucz)) mapa.set(klucz, cena);
+        });
+      });
+      url = dane["@odata.nextLink"] ?? null;
+      strony++;
+    }
+    return mapa;
+  })();
+  cenyTecsCache.catch(() => { cenyTecsCache = null; });
+  return cenyTecsCache;
 }
 
 /** Cennik licencji (Cennik_CRM) - do kodow demo. Title to nazwa w wyszukiwarce, Nazwa idzie do zapisu. */

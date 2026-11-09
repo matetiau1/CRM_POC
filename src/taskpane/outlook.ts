@@ -5,14 +5,14 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego,
+  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs,
 } from "./graphService";
-import type { ListItem, PozycjaCennika } from "./graphService";
+import type { ListItem, PozycjaCennika, CenaTecs } from "./graphService";
 import {
   toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, ticketIdZTematu, Ticket, Company,
-  toContact, Contact, toCompanyFull, CompanyFull, toNota, toTecs, toSzansa,
+  toContact, Contact, toCompanyFull, CompanyFull, toNota, Nota, toTecs, toSzansa, Szansa,
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
-  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow,
+  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow, toProduktTecs, ProduktTecs,
 } from "./crm";
 import { SUPPORT_MAILBOX, POWERAPPS_URL } from "./authConfig";
 import { pobierzPoNip, pelnaNazwa, nipPoprawny } from "./rejestr";
@@ -30,17 +30,36 @@ Office.onReady((info) => {
   document.getElementById("nav-companies")!.onclick = () => void pokazFirmy();
   document.getElementById("nav-contacts")!.onclick = () => void pokazKontakty();
   document.getElementById("nav-crm")!.onclick = () => window.open(POWERAPPS_URL, "_blank");
+  document.getElementById("nav-szanse")!.onclick = () => void pokazSzanse();
 
   Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, () => {
     if (widok === "zgloszenia") void pokazZgloszenia();
+    if (widok === "szanse") void pokazSzanse();
   });
 
-  void pokazZgloszenia();
+  void start();
 });
+
+/** Handlowiec (MEScoStaff.Email) we wlasnej skrzynce startuje od szans firmy nadawcy. */
+async function start() {
+  root().appendChild(el("div", "crm-status", "Wczytywanie..."));
+  let handlowiec = false;
+  try {
+    handlowiec = await czyPracownikMESco();
+  } catch (e) {
+    console.error("MEScoStaff:", e);
+  }
+  document.getElementById("nav-szanse")!.hidden = !handlowiec;
+  document.querySelector(".crm-dol")!.classList.toggle("crm-dol-5", handlowiec);
+
+  const supportowa = await czySkrzynkaSupportu(Office.context.mailbox.item as Office.MessageRead);
+  if (handlowiec && !supportowa) return pokazSzanse();
+  return pokazZgloszenia();
+}
 
 // ---------------------------------------------------------------- stan
 
-type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty";
+type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty" | "szanse";
 let widok: Widok = "zgloszenia";
 let ostatniaFirma: Company | null = null;
 
@@ -58,6 +77,8 @@ type Zakladka =
 let zakladkaFirmy: Zakladka = "Kontakty";
 let tecsTryb: "Bieżące" | "Archiwalne" | "Demo" = "Bieżące";
 let otworzKodyDemo = false; // kafelek "Nowe kody demo" -> TECS/Demo z otwartym formularzem
+let otworzNowyTecs = false; // "Zapisz i utworz TECS" przy wygranej -> TECS/Biezace z otwartym formularzem
+let nowyTecsZSzansy: Szansa | null = null; // wygrana szansa - jej produkty podpowiadamy do TECS-u
 let szanseZamkniete = false;
 let posTryb: "Aktywne TECS" | "Wygasłe" | "Bez TECS" = "Aktywne TECS";
 
@@ -86,11 +107,11 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-type NavId = "nav-tickets" | "nav-companies" | "nav-contacts";
+type NavId = "nav-szanse" | "nav-tickets" | "nav-companies" | "nav-contacts";
 
 function ustawNaglowek(tytul: string, aktywny: NavId) {
   document.getElementById("nav-title")!.textContent = tytul;
-  (["nav-tickets", "nav-companies", "nav-contacts"] as NavId[]).forEach((id) =>
+  (["nav-szanse", "nav-tickets", "nav-companies", "nav-contacts"] as NavId[]).forEach((id) =>
     document.getElementById(id)!.classList.toggle("crm-dol-akt", id === aktywny)
   );
 }
@@ -180,6 +201,8 @@ const IKONY = {
   flaga: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
   teczka: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/>',
   kosz: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/>',
+  uscisk: '<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>',
+  wideo: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
   telefon: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
 };
 
@@ -190,6 +213,111 @@ function ikona(nazwa: keyof typeof IKONY): SVGSVGElement {
   svg.classList.add("crm-ikona");
   svg.innerHTML = IKONY[nazwa];
   return svg;
+}
+
+/**
+ * Rodzaje notatek (activities.Notes_types) maja w nazwie emoji, np. "📞 Telefon".
+ * W SharePoint zostaja bez zmian, w dodatku pokazujemy ikone + tekst bez emoji.
+ */
+const EMOJI = /[\u2190-\u2BFF\u2600-\u27BF\uFE0F\u200D\u20E3]|[\uD83C-\uD83E][\uDC00-\uDFFF]/g;
+
+const IKONA_EMOJI: [string, keyof typeof IKONY][] = [
+  ["📞☎📱📲", "telefon"],
+  ["📧✉📨📩📤📥", "mail"],
+  ["🤝", "uscisk"],
+  ["💻🖥🎥📹📺", "wideo"],
+  ["👥👤🧑👨👩", "osoba"],
+  ["📝📄📃🗒📋✍", "dokument"],
+  ["💰💶💵💸💳🧾", "euro"],
+  ["🎓📚", "czapka"],
+  ["📅🗓📆", "kalendarz"],
+  ["🚗🚙🏢📍", "pinezka"],
+  ["🔧🛠⚙", "klucz"],
+  ["🎯", "cel"],
+  ["🔔⏰", "dzwonek"],
+];
+
+const IKONA_SLOWA: [RegExp, keyof typeof IKONY][] = [
+  [/telefon|rozmow|dzwon/, "telefon"],
+  [/mail|wiadomo/, "mail"],
+  [/teams|online|webinar|wideo|video|zdaln/, "wideo"],
+  [/spotkan|wizyt/, "uscisk"],
+  [/ofert|faktur|zam[oó]wien/, "euro"],
+  [/szkolen|warsztat/, "czapka"],
+  [/support|serwis/, "klucz"],
+  [/demo|licencj/, "licencja"],
+  [/notatk|dokument/, "dokument"],
+];
+
+function rodzajNotatki(etykieta: string): { tekst: string; ik: keyof typeof IKONY } {
+  const tekst = etykieta.replace(EMOJI, "").replace(/\s+/g, " ").trim() || etykieta;
+  const emoji = etykieta.match(EMOJI)?.join("") ?? "";
+  const zEmoji = emoji && IKONA_EMOJI.find(([e]) => [...emoji].some((z) => z.trim() && e.includes(z)));
+  if (zEmoji) return { tekst, ik: zEmoji[1] };
+  const zeSlowa = IKONA_SLOWA.find(([re]) => re.test(tekst.toLowerCase()));
+  return { tekst, ik: zeSlowa ? zeSlowa[1] : "dymek" };
+}
+
+/** Kafelek wyboru rodzaju notatki: ikona + nazwa bez emoji. */
+function chipRodzaju(etykieta: string): HTMLButtonElement {
+  const { tekst, ik } = rodzajNotatki(etykieta);
+  const b = el("button", "crm-chip-wybor crm-chip-rodzaj") as HTMLButtonElement;
+  b.title = tekst;
+  b.append(ikona(ik), el("span", "crm-chip-txt", tekst));
+  return b;
+}
+
+const MAX_MAIL_BODY = 60000; // zapas pod limit kolumny wielowierszowej SharePoint
+
+/**
+ * Przy rodzaju "mail" - opcja dolaczenia otwartej wiadomosci do notatki.
+ * Tresc maila idzie do MailBody, nie do pola notatki (Totatka).
+ */
+function opcjaMaila(box: HTMLElement, zmiana: () => void) {
+  const item = Office.context.mailbox.item as Office.MessageRead | undefined;
+  const w = el("div", "crm-mail-opcja");
+  w.style.display = "none";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.id = `mail-${nowyGuid()}`;
+  const lbl = el("label", "crm-check") as HTMLLabelElement;
+  lbl.htmlFor = cb.id;
+  lbl.append(cb, el("span", undefined, "Zapisz otwarty mail w notatce"));
+  w.appendChild(lbl);
+  if (item?.subject != null) {
+    w.appendChild(poleIk("crm-mail-opcja-info", "mail", item.subject || "(bez tematu)", "Temat"));
+    const od = item.from?.emailAddress ?? "";
+    if (od) w.appendChild(poleIk("crm-mail-opcja-info", "osoba", od, "Nadawca"));
+  }
+  box.appendChild(w);
+  cb.onchange = zmiana;
+
+  return {
+    pokaz(rodzaj: string) {
+      const ok = !!item?.body && !!rodzaj && rodzajNotatki(rodzaj).ik === "mail";
+      w.style.display = ok ? "" : "none";
+      if (!ok) cb.checked = false;
+    },
+    get wlaczony() {
+      return cb.checked && w.style.display !== "none";
+    },
+    async pola(): Promise<Record<string, unknown>> {
+      if (!item) return {};
+      const tresc = await new Promise<string>((ok, blad) =>
+        item.body.getAsync(Office.CoercionType.Text, (r) =>
+          r.status === Office.AsyncResultStatus.Succeeded ? ok(r.value ?? "") : blad(new Error(r.error?.message ?? "nie odczytano treści maila"))
+        )
+      );
+      const temat = item.subject ?? "";
+      return {
+        MailBody: tresc.length > MAX_MAIL_BODY ? tresc.slice(0, MAX_MAIL_BODY) + "\n[…treść skrócona]" : tresc,
+        MailFrom: item.from?.emailAddress ?? "",
+        MailTo: (item.to ?? []).map((a) => a.emailAddress).filter(Boolean).join("; "),
+        MailSubject: temat,
+        MailTitle: temat,
+      };
+    },
+  };
 }
 
 /** Zamienia element w przycisk kopiujacy podana wartosc. */
@@ -1258,6 +1386,68 @@ async function pokazZgloszenia() {
 }
 
 
+// ---------------------------------------------------------------- szanse firmy nadawcy
+
+/** Firma nadawcy: z jego kontaktu, a gdy go nie ma - jedyna firma z ta domena. */
+async function firmaNadawcy(nadawca: string): Promise<Company | null> {
+  const kontakt = await kontaktDlaNadawcy(nadawca);
+  const guid = String((kontakt?.fields as any)?.IdentyfikatorCompanies ?? "");
+  if (guid) {
+    const item = await getCompanyByGuid(guid);
+    if (item) return toCompany(item);
+  }
+  const domena = nadawca.split("@")[1] ?? "";
+  if (!domena) return null;
+  const pasujace = (await getAllCompanies()).filter(
+    (i) => String((i.fields as any).DomenA ?? "").trim().toLowerCase() === domena
+  );
+  return pasujace.length === 1 ? toCompany(pasujace[0]) : null;
+}
+
+let pokazSzansLicznik = 0;
+
+async function pokazSzanse() {
+  widok = "szanse";
+  ustawNaglowek("Szanse", "nav-szanse");
+  const wywolanie = ++pokazSzansLicznik;
+  root().innerHTML = "";
+
+  const item = Office.context.mailbox.item as Office.MessageRead;
+  const nadawca = (item?.from?.emailAddress ?? "").toLowerCase();
+  const s = status("Szukanie firmy nadawcy...");
+  if (!nadawca) {
+    s.textContent = "Wybierz wiadomość, aby zobaczyć szanse firmy nadawcy.";
+    return;
+  }
+
+  try {
+    const c = await firmaNadawcy(nadawca);
+    if (wywolanie !== pokazSzansLicznik || widok !== "szanse") return;
+    if (!c) {
+      s.textContent = `${nadawca} nie jest powiązany z żadną firmą w CRM.`;
+      return;
+    }
+
+    // naglowek z firma - klik otwiera pelna karte firmy na zakladce Szanse
+    const firma = el("button", "crm-szanse-firma") as HTMLButtonElement;
+    firma.append(ikona("firma"), el("span", "crm-ikona-txt", c.nazwa || "(bez nazwy)"));
+    firma.title = "Otwórz kartę firmy";
+    firma.onclick = () => {
+      zakladkaFirmy = "Szanse";
+      void pokazFirma(c);
+    };
+    root().insertBefore(firma, s);
+
+    const box = el("div");
+    root().appendChild(box);
+    await zakladkaSzanse(box, s, c, () => void pokazSzanse());
+  } catch (e: any) {
+    console.error(e);
+    s.textContent = `Błąd: ${e?.message ?? e}`;
+    s.classList.add("crm-error");
+  }
+}
+
 // ---------------------------------------------------------------- moje zgloszenia
 
 // kolejnosc jak w obiegu zgloszenia; zalatwione zwiniete, bo bywa ich setki
@@ -2006,8 +2196,7 @@ async function formularzNotatki(
     const opcje = await getLookupOptions("activities", "Notes_types");
     if (!opcje.length) throw new Error("lista rodzajów jest pusta");
     opcje.forEach((o) => {
-      const b = el("button", "crm-chip-wybor", o.etykieta) as HTMLButtonElement;
-      b.title = o.etykieta;
+      const b = chipRodzaju(o.etykieta);
       b.onclick = () => {
         rodzaj = o.etykieta;
         rodzajId = o.id;
@@ -2022,6 +2211,7 @@ async function formularzNotatki(
   } catch (e: any) {
     box.appendChild(el("div", "crm-nowe-info", `Nie pobrano rodzajów: ${e?.message ?? e}`));
   }
+  const mail = opcjaMaila(box, () => sprawdz());
 
   // --- data ---
   box.appendChild(el("label", "crm-label", "Data"));
@@ -2093,7 +2283,9 @@ async function formularzNotatki(
   function sprawdz(): boolean {
     const brak: string[] = [];
     if (!rodzajId) brak.push("rodzaj");
-    if (!ta.value.trim()) brak.push("treść");
+    mail.pokaz(rodzaj);
+    // dolaczony mail wystarczy jako tresc
+    if (!ta.value.trim() && !mail.wlaczony) brak.push("treść");
     const ok = brak.length === 0;
     zapisz.disabled = !ok;
     brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
@@ -2138,6 +2330,7 @@ async function formularzNotatki(
     if (fu.checked && fuData.value) pola["Follow_up"] = dzien(fuData.value);
 
     try {
+      if (mail.wlaczony) Object.assign(pola, await mail.pola());
       await createListItem("Notes", pola);
       box.remove();
       btn.disabled = false;
@@ -2475,6 +2668,218 @@ async function zakladkaSupporty(box: HTMLElement, s: HTMLElement, c: Company) {
   items.map(toTicket).forEach((t) => box.appendChild(karta(t)));
 }
 
+/** Edycja wlasnej notatki: data, osoba, rodzaj, tresc, follow-up. Pola maila zostaja bez zmian. */
+function edycjaNotatki(nt: Nota, poZapisie: (nowa: Nota) => void, anuluj: () => void): HTMLElement {
+  const box = el("div", "crm-nowe crm-demo");
+  box.appendChild(poleIk("crm-demo-tytul", "pioro", "Edycja notatki"));
+
+  const data = poleFormularza(box, "Data wydarzenia *", "date");
+  data.value = nt.data ? nt.data.slice(0, 10) : dzisISO();
+  const osoba = poleFormularza(box, "Osoba");
+  osoba.value = nt.osoba;
+
+  box.appendChild(el("label", "crm-label", "Rodzaj interakcji *"));
+  const rodzaje = el("div", "crm-chipy crm-chipy-rowne");
+  box.appendChild(rodzaje);
+  let rodzaj = nt.rodzaj;
+  let rodzajId = nt.rodzajId;
+  getLookupOptions("activities", "Notes_types").then(
+    (opcje) => opcje.forEach((op) => {
+      const b = chipRodzaju(op.etykieta);
+      if (op.id === rodzajId || (!rodzajId && op.etykieta === rodzaj)) {
+        b.classList.add("crm-chip-akt");
+        rodzajId = op.id;
+      }
+      b.onclick = () => {
+        rodzaj = op.etykieta;
+        rodzajId = op.id;
+        rodzaje.querySelectorAll(".crm-chip-wybor").forEach((x) => x.classList.remove("crm-chip-akt"));
+        b.classList.add("crm-chip-akt");
+        sprawdz();
+      };
+      rodzaje.appendChild(b);
+    }),
+    (e) => rodzaje.appendChild(el("div", "crm-nowe-info", `Nie pobrano rodzajów: ${e?.message ?? e}`))
+  );
+
+  box.appendChild(el("label", "crm-label", "Notatka"));
+  const ta = document.createElement("textarea");
+  ta.className = "crm-textarea";
+  ta.rows = 5;
+  ta.value = nt.tresc;
+  box.appendChild(ta);
+
+  const fu = document.createElement("input");
+  fu.type = "checkbox";
+  fu.id = `fu-ed-${nt.id}`;
+  fu.checked = !!nt.followUp;
+  const fuLbl = el("label", "crm-check") as HTMLLabelElement;
+  fuLbl.htmlFor = fu.id;
+  fuLbl.append(fu, el("span", undefined, "Follow-up (przypomnienie)"));
+  box.appendChild(fuLbl);
+  const fuData = document.createElement("input");
+  fuData.type = "date";
+  fuData.className = "crm-input";
+  fuData.value = nt.followUp ? nt.followUp.slice(0, 10) : plusDni(data.value, 7);
+  fuData.style.display = fu.checked ? "" : "none";
+  box.appendChild(fuData);
+  fu.onchange = () => (fuData.style.display = fu.checked ? "" : "none");
+
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", "Zapisz zmiany") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!data.value) brak.push("data");
+    if (!rodzaj) brak.push("rodzaj");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  data.onchange = () => sprawdz();
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    const followUp = fu.checked && fuData.value ? dzienSP(fuData.value) : null;
+    const pola: Record<string, unknown> = {
+      Data: dzienSP(data.value),
+      Osoba: osoba.value.trim(),
+      Rodzaj1: rodzaj,
+      Totatka: ta.value,            // uwaga: literowka w nazwie kolumny
+      Follow_up: followUp,          // null czysci przypomnienie
+    };
+    if (rodzajId) pola["TypeLookupId"] = rodzajId;
+
+    try {
+      await updateTicketFields(nt.id, pola, undefined, "Notes");
+      poZapisie({
+        ...nt,
+        data: String(pola.Data ?? ""),
+        osoba: osoba.value.trim(),
+        rodzaj,
+        rodzajId,
+        tresc: ta.value,
+        followUp: followUp ?? "",
+      });
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
+
+  return box;
+}
+
+/** Karta notatki z koszem przy wlasnych - w zakladce Notatki i przy szansach. */
+function kartaNotatki(nt: Nota, ja: string, poUsunieciu?: () => void): HTMLElement {
+  const k = el("div", "crm-nota");
+  const top = el("div", "crm-nota-top");
+  top.appendChild(poleIk("crm-nota-data", "kalendarz", dataPL(nt.data), "Data"));
+
+  // typ notatki w prawym rogu
+  const prawo = el("div", "crm-nota-prawo");
+  if (nt.rodzaj) {
+    const { tekst, ik } = rodzajNotatki(nt.rodzaj);
+    const typ = el("span", "crm-nota-typ");
+    typ.title = tekst;
+    typ.append(ikona(ik), el("span", undefined, tekst));
+    prawo.appendChild(typ);
+  }
+  const moja = !!ja && nt.autor.trim().toLowerCase() === ja;
+  const edytuj = el("button", "crm-usun crm-edytuj") as HTMLButtonElement;
+  edytuj.appendChild(ikona("pioro"));
+  edytuj.title = "Edytuj notatkę";
+  const kosz = el("button", "crm-usun") as HTMLButtonElement;
+  kosz.appendChild(ikona("kosz"));
+  kosz.title = "Usuń notatkę";
+  if (moja) prawo.append(edytuj, kosz);
+  top.appendChild(prawo);
+  k.appendChild(top);
+
+  // edycja w miejscu karty; po zapisie karta rysowana od nowa z nowymi danymi
+  edytuj.onclick = () => {
+    const forma = edycjaNotatki(
+      nt,
+      (nowa) => forma.replaceWith(kartaNotatki(nowa, ja, poUsunieciu)),
+      () => forma.replaceWith(k)
+    );
+    k.replaceWith(forma);
+  };
+
+  if (nt.osoba) k.appendChild(poleIk("crm-nota-osoba", "osoba", nt.osoba, "Dla kogo"));
+  if (nt.followUp) {
+    const po = (dniDo(nt.followUp) ?? 0) < 0 && !nt.followDone;
+    const fu = pastylka(
+      (nt.followDone ? "✓ " : "") + "Follow-up " + dataPL(nt.followUp),
+      po ? "#DC2626" : "#D97706",
+      po ? "#FEE2E2" : "#FEF3E2",
+      "dzwonek"
+    );
+    fu.classList.add("crm-nota-fu");
+    k.appendChild(fu);
+  }
+  if (nt.tresc) {
+    const tresc = el("div", "crm-nota-tresc");
+    tresc.append(ikona("dymek"), el("div", "crm-nota-tresc-txt", nt.tresc));
+    k.appendChild(tresc);
+  }
+  if (nt.autor) k.appendChild(poleIk("crm-nota-autor", "pioro", nt.autor, "Autor"));
+
+  // potwierdzenie - notatka to zapis historii, nie kasujemy jednym kliknieciem
+  const pytanie = el("div", "crm-nota-usun");
+  pytanie.style.display = "none";
+  pytanie.appendChild(el("div", undefined, "Usunąć tę notatkę? Tego nie można cofnąć."));
+
+  const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+  const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const rzadU = el("div", "crm-akcje");
+  rzadU.appendChild(tak);
+  rzadU.appendChild(nie);
+  pytanie.appendChild(rzadU);
+  k.appendChild(pytanie);
+
+  kosz.onclick = () => {
+    pytanie.style.display = "block";
+    kosz.style.visibility = "hidden";
+  };
+  nie.onclick = () => {
+    pytanie.style.display = "none";
+    kosz.style.visibility = "visible";
+  };
+  tak.onclick = async () => {
+    tak.disabled = true;
+    nie.disabled = true;
+    tak.textContent = "Usuwanie...";
+    try {
+      await deleteListItem("Notes", nt.id);
+      k.remove();
+      poUsunieciu?.();
+    } catch (e: any) {
+      tak.textContent = "Usuń";
+      tak.disabled = false;
+      nie.disabled = false;
+      pytanie.appendChild(el("div", "crm-komunikat crm-blad", e?.message ?? String(e)));
+    }
+  };
+
+  return k;
+}
+
 async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   const items = await getByCompany("Notes", c.guid, { top: 50 });
     // kosz pokazujemy tylko przy wlasnych notatkach
@@ -2488,79 +2893,7 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   s.textContent = `Notatki — ${lista.length}`;
   if (!lista.length) return pusto(box, "Brak notatek dla tej firmy.");
 
-  lista.forEach((nt) => {
-    const k = el("div", "crm-nota");
-    const top = el("div", "crm-nota-top");
-    top.appendChild(poleIk("crm-nota-data", "kalendarz", dataPL(nt.data), "Data"));
-
-    // typ notatki w prawym rogu
-    const prawo = el("div", "crm-nota-prawo");
-    if (nt.rodzaj) prawo.appendChild(el("span", "crm-nota-typ", nt.rodzaj));
-    const moja = !!ja && nt.autor.trim().toLowerCase() === ja;
-    const kosz = el("button", "crm-usun") as HTMLButtonElement;
-    kosz.appendChild(ikona("kosz"));
-    kosz.title = "Usuń notatkę";
-    if (moja) prawo.appendChild(kosz);
-    top.appendChild(prawo);
-    k.appendChild(top);
-
-    if (nt.osoba) k.appendChild(poleIk("crm-nota-osoba", "osoba", nt.osoba, "Dla kogo"));
-    if (nt.followUp) {
-      const po = (dniDo(nt.followUp) ?? 0) < 0 && !nt.followDone;
-      const fu = pastylka(
-        (nt.followDone ? "✓ " : "") + "Follow-up " + dataPL(nt.followUp),
-        po ? "#DC2626" : "#D97706",
-        po ? "#FEE2E2" : "#FEF3E2",
-        "dzwonek"
-      );
-      fu.classList.add("crm-nota-fu");
-      k.appendChild(fu);
-    }
-    if (nt.tresc) {
-      const tresc = el("div", "crm-nota-tresc");
-      tresc.append(ikona("dymek"), el("div", "crm-nota-tresc-txt", nt.tresc));
-      k.appendChild(tresc);
-    }
-    if (nt.autor) k.appendChild(poleIk("crm-nota-autor", "pioro", nt.autor, "Autor"));
-
-    // potwierdzenie - notatka to zapis historii, nie kasujemy jednym kliknieciem
-    const pytanie = el("div", "crm-nota-usun");
-    pytanie.style.display = "none";
-    pytanie.appendChild(el("div", undefined, "Usunąć tę notatkę? Tego nie można cofnąć."));
-
-    const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
-    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
-    const rzadU = el("div", "crm-akcje");
-    rzadU.appendChild(tak);
-    rzadU.appendChild(nie);
-    pytanie.appendChild(rzadU);
-    k.appendChild(pytanie);
-
-    kosz.onclick = () => {
-      pytanie.style.display = "block";
-      kosz.style.visibility = "hidden";
-    };
-    nie.onclick = () => {
-      pytanie.style.display = "none";
-      kosz.style.visibility = "visible";
-    };
-    tak.onclick = async () => {
-      tak.disabled = true;
-      nie.disabled = true;
-      tak.textContent = "Usuwanie...";
-      try {
-        await deleteListItem("Notes", nt.id);
-        k.remove();
-      } catch (e: any) {
-        tak.textContent = "Usuń";
-        tak.disabled = false;
-        nie.disabled = false;
-        pytanie.appendChild(el("div", "crm-komunikat crm-blad", e?.message ?? String(e)));
-      }
-    };
-
-    box.appendChild(k);
-  });
+  lista.forEach((nt) => box.appendChild(kartaNotatki(nt, ja)));
 }
 
 async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
@@ -2568,6 +2901,31 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     tecsTryb = v as typeof tecsTryb;
     void pokazFirma(c);
   });
+
+  // nowa szansa TECS - przycisk nad lista albo od razu po wygranej szansie
+  const nowyBox = el("div");
+  box.appendChild(nowyBox);
+  const otworzFormTecs = (zSzansy: Szansa | null = null) => {
+    nowyBtn.disabled = true;
+    void formularzNowegoTecs(nowyBox, c, zSzansy, () => {
+      tecsTryb = "Bieżące";
+      void pokazFirma(c);
+    }, () => {
+      nowyBox.innerHTML = "";
+      nowyBox.appendChild(nowyBtn);
+      nowyBtn.disabled = false;
+    });
+  };
+  const nowyBtn = przyciskIk("crm-btn crm-tecs-nowy", "licencja", "Nowa szansa TECS");
+  nowyBtn.onclick = () => {
+    nowyBox.innerHTML = "";
+    otworzFormTecs();
+  };
+  if (otworzNowyTecs) {
+    otworzNowyTecs = false;
+    otworzFormTecs(nowyTecsZSzansy);
+    nowyTecsZSzansy = null;
+  } else nowyBox.appendChild(nowyBtn);
 
   // nowe kody demo - formularz nad lista, otwierany kafelkiem pod zakladkami
   if (otworzKodyDemo) {
@@ -2581,9 +2939,9 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
   const wszystkie = items.map(toTecs);
   const lista =
     tecsTryb === "Bieżące"
-      ? wszystkie.filter((t) => t.etap === "Przygotowanie oferty" || t.etap === "Oferta wysłana")
+      ? wszystkie.filter((t) => ETAPY_TECS_BIEZACE.includes(t.etap))
       : tecsTryb === "Archiwalne"
-      ? wszystkie.filter((t) => ["Oferta wysłana", "Zamówione", "Rezygnacja z TECS"].includes(t.etap))
+      ? wszystkie.filter((t) => ETAPY_TECS_ARCHIWALNE.includes(t.etap))
       : wszystkie.filter((t) => t.etap === "Demo");
 
   s.textContent = `TECS ${tecsTryb.toLowerCase()} — ${lista.length}`;
@@ -2604,7 +2962,8 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     const wart =
       t.demo ? (t.klient ? "Klient " + t.klient : "Kody demo") : t.tp ? "TechPool" : euro(t.wartosc);
     const ikWart = t.demo ? (t.klient ? "osoba" : "licencja") : t.tp ? "paczka" : "euro";
-    k.appendChild(poleIk("crm-kafel-wartosc", ikWart, wart, "Wartość"));
+    const wartEl = poleIk("crm-kafel-wartosc", ikWart, wart, "Wartość");
+    k.appendChild(wartEl);
 
     const d = dniDo(t.koniec);
     const meta = poleIk(
@@ -2619,6 +2978,44 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     meta.style.color = kolorTerminu(d);
     k.appendChild(meta);
     k.appendChild(pasekTerminu(d));
+
+    if (!t.demo && t.guid) {
+      const rzadP = el("div", "crm-akcje crm-szansa-akcje");
+      const szcz = przyciskIk("crm-btn crm-btn-cichy", "flaga", "Szczegóły i etap");
+      rzadP.appendChild(szcz);
+      const panelSzcz = el("div");
+      const pokazSzczegoly = () => {
+        panelSzcz.appendChild(panelTecs(t, c));
+        szcz.classList.add("crm-btn-wcisniety");
+        otwartySzczegolTecs = t.id;
+      };
+      szcz.onclick = () => {
+        if (panelSzcz.childElementCount) {
+          panelSzcz.innerHTML = "";
+          szcz.classList.remove("crm-btn-wcisniety");
+          otwartySzczegolTecs = "";
+        } else pokazSzczegoly();
+      };
+      if (otwartySzczegolTecs === t.id) pokazSzczegoly();
+      const prod = przyciskIk("crm-btn crm-btn-cichy", "paczka", "Produkty i ceny");
+      rzadP.appendChild(prod);
+      k.appendChild(rzadP);
+      k.appendChild(panelSzcz);
+      const panel = el("div");
+      k.appendChild(panel);
+      prod.onclick = () => {
+        if (panel.childElementCount) {
+          panel.innerHTML = "";
+          prod.classList.remove("crm-btn-wcisniety");
+          return;
+        }
+        prod.classList.add("crm-btn-wcisniety");
+        void produktyTecs(panel, t, c, (nowa) => {
+          t.wartosc = nowa;
+          if (!t.tp) wartEl.querySelector(".crm-ikona-txt")!.textContent = euro(nowa);
+        });
+      };
+    }
 
     if (t.demo) {
       if (t.odbiorca) k.appendChild(poleIk("crm-kafel-opps", "osoba", t.odbiorca, "Kody demo dla"));
@@ -2642,6 +3039,599 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     }
     box.appendChild(k);
   });
+}
+
+// ---------------------------------------------------------------- szczegoly TECS (conTECSView)
+
+// etapy TECS (Etap1, tekst) - sciezka zwykla i osobna dla Tech Poola, jak w Power Apps
+const ETAPY_TECS = ["Przygotowanie oferty", "Oferta wysłana", "Zamówione", "Wystawiona faktura"];
+const ETAPY_TP = ["Tech Pool", "Koniec Tech Poola"];
+const REZYGNACJA_TECS = "Rezygnacja z TECS";
+// "Wystawiona faktura" i etapy Tech Poola nie trafialy dotad do zadnej listy - dopisane
+const ETAPY_TECS_BIEZACE = ["Przygotowanie oferty", "Oferta wysłana", "Tech Pool"];
+const ETAPY_TECS_ARCHIWALNE = ["Oferta wysłana", "Zamówione", "Wystawiona faktura", REZYGNACJA_TECS, "Koniec Tech Poola"];
+
+// panel szczegolow otwarty przed przerysowaniem zakladki (zmiana etapu, edycja)
+let otwartySzczegolTecs = "";
+
+const linkZPola = (v: unknown) => String((v as any)?.Url ?? v ?? "").trim();
+
+/** Szczegoly TECS: kafle (wartosc, odbiorca, okres, follow-up), etap, uwagi, linki SF i edycja. */
+function panelTecs(t: TecsRow, c: Company): HTMLElement {
+  const box = el("div", "crm-szansa-panel crm-tecs-szcz");
+  const komunikat = el("div", "crm-komunikat");
+
+  const opis = [
+    `Klient Ansys: ${String(t.pola.Numer_klienta ?? "").trim() || "—"}`,
+    `Quote: ${String(t.pola.QuoteNumber ?? "").trim() || "—"}`,
+  ];
+  if (t.tp) opis.push("TECH POOL");
+  box.appendChild(el("div", "crm-tecs-szcz-opis", opis.join("  ·  ")));
+
+  // linki do Salesforce - tylko gdy sa
+  const linki = el("div", "crm-akcje crm-szansa-akcje");
+  ([["Opp w SF", t.pola.LinkdoOppsawSF], ["Quote w SF", t.pola.QuoteNumberLink]] as [string, unknown][]).forEach(([tekst, v]) => {
+    const url = linkZPola(v);
+    if (!url) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.className = "crm-btn crm-btn-cichy crm-tecs-link";
+    a.textContent = `↗ ${tekst}`;
+    linki.appendChild(a);
+  });
+  if (linki.childElementCount) box.appendChild(linki);
+
+  // --- kafle ---
+  const kafle = el("div", "crm-tecs-kafle");
+  box.appendChild(kafle);
+  const kafel = (ik: keyof typeof IKONY, kol: string, etykieta: string, wartosc: string, dopisek = "", kolDopisku = "") => {
+    const k = el("div", "crm-tecs-kafel");
+    const ikona_ = ikona(ik);
+    ikona_.style.color = kol;
+    k.appendChild(ikona_);
+    const tresc = el("div", "crm-tecs-kafel-tresc");
+    tresc.append(el("div", "crm-tecs-kafel-et", etykieta), el("div", "crm-tecs-kafel-war", wartosc));
+    if (dopisek) {
+      const d = el("div", "crm-tecs-kafel-dop", dopisek);
+      if (kolDopisku) d.style.color = kolDopisku;
+      tresc.appendChild(d);
+    }
+    k.appendChild(tresc);
+    k.title = `${etykieta}: ${wartosc}${dopisek ? ` (${dopisek})` : ""}`;
+    kafle.appendChild(k);
+  };
+  kafel("wykres", "#16A34A", t.tp ? "Wartość Tech Poola" : "Wartość TECS", euro(t.wartosc));
+  kafel("osoba", "#2F6FD6", "Oferta do", t.odbiorca || "—");
+  const dk = dniDo(t.koniec);
+  kafel("kalendarz", "#7C3AED", t.tp ? "Okres Tech Poola" : "Okres TECS",
+    `${dataPL(t.poczatek)} – ${dataPL(t.koniec)}`,
+    dk === null ? "" : dk < 0 ? `zakończony ${-dk} dni temu` : `do końca ${dk} dni`,
+    dk !== null && dk < 30 ? "#DC2626" : "");
+  const df = dniDo(t.followUp);
+  kafel("zegar", "#D97706", "Follow-up", t.followUp ? dataPL(t.followUp) : "—",
+    df === null ? "nie ustawiono" : df < 0 ? "po terminie" : df === 0 ? "dzisiaj" : `za ${df} dni`,
+    df !== null && df < 0 ? "#DC2626" : "");
+
+  // --- etap: klik zapisuje od razu (z kontrola wspolbieznosci) ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Etap"));
+  const kroki = el("div", "crm-szansa-etapy");
+  box.appendChild(kroki);
+  const sciezka = ETAPY_TP.includes(t.etap) ? ETAPY_TP : ETAPY_TECS;
+  const biezacy = sciezka.indexOf(t.etap) + 1;
+  const zapiszEtap = async (etap: string, b: HTMLButtonElement) => {
+    b.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      await updateTicketFields(t.id, { Etap1: etap }, t.etag || undefined, "Opps_TECS");
+      // karta przechodzi do listy, na ktorej ten etap jest widoczny
+      if (!ETAPY_TECS_BIEZACE.includes(etap) && tecsTryb === "Bieżące") tecsTryb = "Archiwalne";
+      if (!ETAPY_TECS_ARCHIWALNE.includes(etap) && tecsTryb === "Archiwalne") tecsTryb = "Bieżące";
+      otwartySzczegolTecs = t.id;
+      await pokazFirma(c);
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      b.disabled = false;
+    }
+  };
+  sciezka.forEach((etap, i) => {
+    const nr = i + 1;
+    const ukonczony = nr < biezacy && t.etap !== REZYGNACJA_TECS;
+    const b = el("button", "crm-szansa-krok", `${ukonczony ? "✓" : nr + "."} ${etap}`) as HTMLButtonElement;
+    b.title = etap;
+    b.classList.add(nr === biezacy ? "crm-krok-biez" : ukonczony ? "crm-krok-ok" : "crm-krok-przysz");
+    b.onclick = () => { if (nr !== biezacy) void zapiszEtap(etap, b); };
+    kroki.appendChild(b);
+  });
+  if (sciezka === ETAPY_TECS) {
+    const rez = el("button", "crm-szansa-krok crm-krok-rezygnacja", REZYGNACJA_TECS) as HTMLButtonElement;
+    rez.classList.toggle("crm-krok-rez-akt", t.etap === REZYGNACJA_TECS);
+    rez.onclick = () => { if (t.etap !== REZYGNACJA_TECS) void zapiszEtap(REZYGNACJA_TECS, rez); };
+    kroki.appendChild(rez);
+  }
+
+  // --- uwagi ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Uwagi"));
+  const uwagi = String(t.pola.UWAGI ?? "").trim();
+  box.appendChild(el("div", uwagi ? "crm-tecs-uwagi" : "crm-tecs-uwagi crm-tecs-uwagi-brak", uwagi || "Brak uwag"));
+
+  // --- edycja danych TECS - ten sam formularz co nowy TECS ---
+  const edycjaBox = el("div");
+  const rzad = el("div", "crm-akcje");
+  const edytuj = przyciskIk("crm-btn crm-btn-cichy", "pioro", "Edytuj dane TECS");
+  const odnow = przyciskIk("crm-btn crm-btn-cichy", "wykres", "Renewal");
+  odnow.title = "Nowy TECS na kolejny rok na podstawie tego";
+  rzad.append(edytuj, odnow);
+  box.append(rzad, edycjaBox, komunikat);
+  odnow.onclick = () => {
+    rzad.style.display = "none";
+    void formularzNowegoTecs(edycjaBox, c, null, () => {
+      tecsTryb = "Bieżące";
+      void pokazFirma(c);
+    }, () => {
+      edycjaBox.innerHTML = "";
+      rzad.style.display = "";
+    }, null, t);
+  };
+  edytuj.onclick = () => {
+    rzad.style.display = "none";
+    void formularzNowegoTecs(edycjaBox, c, null, () => {
+      otwartySzczegolTecs = t.id;
+      void pokazFirma(c);
+    }, () => {
+      edycjaBox.innerHTML = "";
+      rzad.style.display = "";
+    }, t);
+  };
+
+  return box;
+}
+
+// ---------------------------------------------------------------- produkty TECS
+
+const rodzajProduktuTecs = (p: ProduktTecs) =>
+  p.tp ? "Tech Pool" : p.lease ? `Dzierżawa ${p.leaseDni} dni` : "TECS";
+
+const r2 = (v: number) => Math.round(v * 100) / 100;
+
+/** SUMA pozycji TECS (tvFormProdukt): cena x ilosc po rabacie + wartosc dzierzawy. Power Apps przy ↻ pomijal rabat. */
+const sumaTecs = (cena: number, ile: number, rabat: number, leaseValue = 0) =>
+  r2(cena * ile * (1 - (rabat || 0) / 100) + leaseValue);
+
+/** Mnoznik krotkiej dzierzawy: do 62 dni x2, do 270 dni x1,35, dluzej x1. */
+const mnoznikDzierzawy = (dni: number) => (dni <= 62 ? 2 : dni <= 270 ? 1.35 : 1);
+
+/** LeaseValue: ilosc x Annual Lease / 365 x mnoznik x dni, po rabacie. */
+const wartoscDzierzawy = (ile: number, annualLease: number, dni: number, rabat: number) =>
+  r2(ile * annualLease / 365 * mnoznikDzierzawy(dni) * dni * (1 - (rabat || 0) / 100));
+
+type RodzajTecs = "TECS" | "TP" | "Lease";
+
+/**
+ * Produkty i ceny TECS (conTECSProdukty z Power Apps): lista pozycji Oferty_TECS,
+ * cena z cennika, usuwanie, przeliczenie wartosci i przepisanie z poprzedniego TECS-u.
+ * Zmiany tylko dla osob z MEScoStaff, jak w Power Apps.
+ */
+async function produktyTecs(miejsce: HTMLElement, t: TecsRow, c: Company, nowaWartosc: (v: number) => void) {
+  const box = el("div", "crm-tecs-produkty");
+  miejsce.appendChild(box);
+  const stan = el("div", "crm-komunikat", "Wczytywanie produktów...");
+  box.appendChild(stan);
+
+  let pracownik = false;
+  let ceny = new Map<string, CenaTecs>();
+  let pozycje: ProduktTecs[] = [];
+  let poprzednie: ProduktTecs[] = [];
+  try {
+    const [p, cn, biez, stare] = await Promise.all([
+      czyPracownikMESco().catch(() => false),
+      getCenyTecs().catch((e) => {
+        console.warn("cennik TECS:", e);
+        return new Map<string, CenaTecs>();
+      }),
+      getByCompany("Oferty_TECS", t.guid, { pole: "IdentyfikatorTECS", top: 200 }),
+      t.guidOld
+        ? getByCompany("Oferty_TECS", t.guidOld, { pole: "IdentyfikatorTECS", top: 200 })
+        : Promise.resolve([] as ListItem[]),
+    ]);
+    pracownik = p;
+    ceny = cn;
+    pozycje = biez.map(toProduktTecs);
+    poprzednie = stare.map(toProduktTecs);
+  } catch (e: any) {
+    stan.textContent = `Błąd: ${e?.message ?? e}`;
+    stan.className = "crm-komunikat crm-blad";
+    return;
+  }
+  stan.remove();
+
+  const lista = el("div", "crm-tecs-lista");
+  const stopka = el("div", "crm-tecs-stopka");
+  const komunikat = el("div", "crm-komunikat");
+  const dodajBox = el("div", "crm-tecs-dodaj");
+  box.append(lista, dodajBox, stopka, komunikat);
+
+  if (pracownik) {
+    const dodaj = przyciskIk("crm-btn crm-tecs-nowy", "paczka", "Dodaj produkt");
+    dodajBox.appendChild(dodaj);
+    dodaj.onclick = () => {
+      dodaj.disabled = true;
+      const forma = formularzProduktuTecs(t, c, ceny, null, (nowy) => {
+        pozycje.push(nowy);
+        forma.remove();
+        dodaj.disabled = false;
+        ok(`Dodano ${nowy.produkt}. Pamiętaj o „Przelicz wartość”.`);
+        rysuj();
+      }, () => {
+        forma.remove();
+        dodaj.disabled = false;
+      });
+      dodajBox.appendChild(forma);
+    };
+  }
+
+  const blad = (e: any) => {
+    komunikat.textContent = e?.message ?? String(e);
+    komunikat.className = "crm-komunikat crm-blad";
+  };
+  const ok = (tekst: string) => {
+    komunikat.textContent = tekst;
+    komunikat.className = "crm-komunikat crm-ok";
+  };
+
+  const rysuj = () => {
+    lista.innerHTML = "";
+    if (!pozycje.length) lista.appendChild(el("div", "crm-pusto", "Brak produktów w tym TECS."));
+    pozycje.forEach((p) => lista.appendChild(wiersz(p)));
+    rysujStopke();
+  };
+
+  const wiersz = (p: ProduktTecs): HTMLElement => {
+    const w = el("div", "crm-tecs-poz");
+    const gora = el("div", "crm-tecs-poz-gora");
+    gora.appendChild(poleIk("crm-tecs-poz-nazwa", "licencja", p.produkt || "(bez nazwy)", p.produkt));
+    gora.appendChild(el("span", "crm-tecs-poz-suma", euro(p.suma)));
+    w.appendChild(gora);
+
+    // cena na czerwono = nizsza niz w cenniku, na zielono = zgodna
+    const cennik = ceny.get(p.produkt.trim())?.tecs;
+    const linia = el("div", "crm-tecs-poz-linia");
+    linia.appendChild(el("span", undefined, `${rodzajProduktuTecs(p)} · ${p.ile} szt.`));
+    const cena = el("span", "crm-tecs-cena", euro(p.cena));
+    if (cennik !== undefined) {
+      cena.title = `Cennik: ${euro(cennik)}`;
+      cena.classList.add(p.cena < cennik ? "crm-tecs-cena-nizsza" : p.cena === cennik ? "crm-tecs-cena-ok" : "");
+    } else cena.title = "Brak produktu w cenniku";
+    linia.append(cena);
+    if (p.rabat) linia.appendChild(el("span", undefined, `rabat ${p.rabat}%`));
+    if (p.tpValue) linia.appendChild(el("span", undefined, `TP ${euro(p.tpValue)}`));
+    if (p.leaseValue) linia.appendChild(el("span", undefined, `dzierżawa ${euro(p.leaseValue)}`));
+    w.appendChild(linia);
+
+    if (!pracownik) return w;
+    const akcje = el("div", "crm-tecs-poz-akcje");
+    w.appendChild(akcje);
+
+    // ↻ cena TECS z cennika; dzierzawa i TP zostaja jak byly (licza sie z Annual Lease)
+    {
+      const sync = el("button", "crm-usun crm-edytuj") as HTMLButtonElement;
+      sync.title = cennik === undefined ? "Brak produktu w cenniku" : `Pobierz cenę z cennika (${euro(cennik)})`;
+      sync.textContent = "↻ cena z cennika";
+      sync.disabled = cennik === undefined;
+      sync.onclick = async () => {
+        if (cennik === undefined) return;
+        sync.disabled = true;
+        try {
+          const suma = sumaTecs(cennik, p.ile, p.rabat, p.lease ? p.leaseValue : 0);
+          await updateTicketFields(p.id, { Cena_TECS: cennik, SUMA: suma }, undefined, "Oferty_TECS");
+          Object.assign(p, { cena: cennik, suma });
+          ok(`Zaktualizowano cenę ${p.produkt} z cennika (z rabatem ${p.rabat || 0}%). Pamiętaj o „Przelicz wartość”.`);
+          rysuj();
+        } catch (e) {
+          blad(e);
+          sync.disabled = false;
+        }
+      };
+      akcje.appendChild(sync);
+    }
+
+    const edytuj = el("button", "crm-usun crm-edytuj") as HTMLButtonElement;
+    edytuj.appendChild(ikona("pioro"));
+    edytuj.title = "Edytuj produkt";
+    akcje.appendChild(edytuj);
+    edytuj.onclick = () => {
+      const forma = formularzProduktuTecs(t, c, ceny, p, (nowy) => {
+        Object.assign(p, nowy);
+        ok(`Zapisano ${p.produkt}. Pamiętaj o „Przelicz wartość”.`);
+        rysuj();
+      }, () => forma.replaceWith(w));
+      w.replaceWith(forma);
+    };
+
+    const kosz = el("button", "crm-usun") as HTMLButtonElement;
+    kosz.appendChild(ikona("kosz"));
+    kosz.title = "Usuń produkt";
+    akcje.appendChild(kosz);
+    kosz.onclick = () => {
+      akcje.innerHTML = "";
+      akcje.appendChild(el("span", "crm-tecs-pytanie", `Usunąć ${p.produkt}?`));
+      const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+      const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+      akcje.append(tak, nie);
+      nie.onclick = rysuj;
+      tak.onclick = async () => {
+        tak.disabled = nie.disabled = true;
+        try {
+          await deleteListItem("Oferty_TECS", p.id);
+          pozycje = pozycje.filter((x) => x !== p);
+          ok(`Usunięto ${p.produkt}. Pamiętaj o „Przelicz wartość”.`);
+          rysuj();
+        } catch (e) {
+          blad(e);
+          rysuj();
+        }
+      };
+    };
+    return w;
+  };
+
+  const rysujStopke = () => {
+    stopka.innerHTML = "";
+    const razem = Math.round(pozycje.reduce((a, p) => a + p.suma, 0) * 100) / 100;
+    const zgodne = Math.round(razem) === Math.round(t.wartosc || 0);
+    const kol = (etykieta: string, wartosc: string, klasa = "") => {
+      const k = el("div", "crm-tecs-stopka-kol");
+      k.append(el("div", "crm-tecs-stopka-et", etykieta), el("div", `crm-tecs-stopka-war ${klasa}`.trim(), wartosc));
+      return k;
+    };
+    stopka.append(
+      kol("Suma pozycji", euro(razem)),
+      kol("Wartość TECS w systemie", euro(t.wartosc || 0), zgodne ? "crm-ok" : "crm-nf-uwaga")
+    );
+    const przelicz = przyciskIk("crm-btn crm-btn-cichy", "wykres", "Przelicz wartość");
+    przelicz.disabled = zgodne;
+    przelicz.title = zgodne ? "Wartość zgodna z sumą pozycji" : "Zapisz sumę pozycji jako wartość TECS";
+    przelicz.onclick = async () => {
+      przelicz.disabled = true;
+      try {
+        await updateTicketFields(t.id, { [await nazwaWewnetrzna("Opps_TECS", "Wartość")]: razem }, undefined, "Opps_TECS");
+        nowaWartosc(razem);
+        ok(`Przeliczono wartość TECS: ${euro(razem)}`);
+        rysujStopke();
+      } catch (e) {
+        blad(e);
+        przelicz.disabled = false;
+      }
+    };
+    stopka.appendChild(przelicz);
+  };
+
+  rysuj();
+
+  // --- z poprzedniego TECS-u ---
+  if (!t.guidOld) return;
+  box.appendChild(el("div", "crm-nf-sekcja", "Z poprzedniego TECS-u"));
+  if (!poprzednie.length) {
+    box.appendChild(el("div", "crm-pusto", "Poprzedni TECS nie ma produktów."));
+    return;
+  }
+  poprzednie.forEach((p) => {
+    const w = el("div", "crm-tecs-poz crm-tecs-stary");
+    const gora = el("div", "crm-tecs-poz-gora");
+    gora.appendChild(poleIk("crm-tecs-poz-nazwa", "licencja", p.produkt, p.produkt));
+    w.appendChild(gora);
+    w.appendChild(el("div", "crm-tecs-poz-linia", `${p.ile} szt. · do ${dataPL(p.koniec)}`));
+    if (pracownik) {
+      const przepisz = el("button", "crm-btn crm-btn-cichy", "Przepisz") as HTMLButtonElement;
+      gora.appendChild(przepisz);
+      przepisz.onclick = async () => {
+        przepisz.disabled = true;
+        // Power Apps przepisywal bez ceny i sumy - bierzemy aktualna cene z cennika (albo stara, gdy produktu brak)
+        const cena = ceny.get(p.produkt.trim())?.tecs ?? p.cena;
+        const suma = sumaTecs(cena, p.ile, p.rabat);
+        try {
+          const nowy = await createListItem("Oferty_TECS", {
+            IdentyfikatorCompanies: c.guid,
+            IdentyfikatorTECS: t.guid,
+            ProducID: p.produkt,
+            Liczba_licencji: p.ile,
+            Pocz_x0105_tek_TECS: t.poczatek || null,
+            Koniec_TECS: t.koniec || null,
+            FirmaIDofertaTECS: p.firmaId,
+            TECSOppsIDoferta: p.oppsId,
+            Rabat: p.rabat,
+            Cena_TECS: cena,
+            SUMA: suma,
+          });
+          pozycje.push(toProduktTecs(nowy));
+          ok(`Przepisano ${p.produkt} (${euro(suma)}). Pamiętaj o „Przelicz wartość”.`);
+          rysuj();
+          przepisz.textContent = "Przepisano";
+        } catch (e) {
+          blad(e);
+          przepisz.disabled = false;
+        }
+      };
+    }
+    box.appendChild(w);
+  });
+}
+
+/**
+ * Dodanie / edycja pozycji Oferty_TECS (tvFormProdukt z Power Apps). Rodzaj TECS / Tech Pool / Dzierzawa,
+ * wzory: SUMA = cena x ilosc x (1 - rabat) [+ LeaseValue], TPValue = ilosc x Annual Lease (bez rabatu).
+ */
+function formularzProduktuTecs(
+  t: TecsRow,
+  c: Company,
+  ceny: Map<string, CenaTecs>,
+  p: ProduktTecs | null,
+  poZapisie: (nowy: ProduktTecs) => void,
+  anuluj: () => void
+): HTMLElement {
+  const box = el("div", "crm-nowe crm-demo crm-tecs-forma");
+  box.appendChild(poleIk("crm-demo-tytul", "paczka", p ? `Edycja: ${p.produkt}` : "Nowy produkt"));
+
+  // --- rodzaj: domyslnie jak w Power Apps (TP gdy TECS jest TechPoolem) ---
+  box.appendChild(el("label", "crm-label", "Rodzaj"));
+  let rodzaj: RodzajTecs = p ? (p.tp ? "TP" : p.lease ? "Lease" : "TECS") : t.tp ? "TP" : "TECS";
+  chipyWyboru<RodzajTecs>(box, [
+    { tekst: "TECS", wartosc: "TECS" },
+    { tekst: "Tech Pool", wartosc: "TP" },
+    { tekst: "Dzierżawa", wartosc: "Lease" },
+  ], rodzaj, (v) => {
+    rodzaj = v;
+    dniBox.style.display = v === "Lease" ? "" : "none";
+    przelicz();
+  });
+
+  // --- produkt z cennika (datalist - wpisz lub wybierz) ---
+  const produkt = poleFormularza(box, "Produkt *");
+  produkt.placeholder = "zacznij wpisywać nazwę licencji…";
+  const lista = document.createElement("datalist");
+  lista.id = `cennik-${nowyGuid()}`;
+  [...ceny.keys()].sort((a, b) => a.localeCompare(b, "pl")).forEach((k) => {
+    const o = document.createElement("option");
+    o.value = k;
+    lista.appendChild(o);
+  });
+  box.appendChild(lista);
+  produkt.setAttribute("list", lista.id);
+  produkt.value = p?.produkt ?? "";
+
+  const rzad = el("div", "crm-demo-okres");
+  box.appendChild(rzad);
+  const kol = (etykieta: string, wartosc: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "text";
+    i.inputMode = "decimal";
+    i.className = "crm-input";
+    i.value = wartosc;
+    k.appendChild(i);
+    rzad.appendChild(k);
+    return i;
+  };
+  const ilosc = kol("Liczba licencji *", String(p?.ile ?? 1));
+  const rabat = kol("Rabat %", String(p?.rabat ?? 0));
+  const cena = poleFormularza(box, "Cena TECS / szt. (€)");
+  cena.inputMode = "decimal";
+  cena.value = p ? String(p.cena) : "";
+  let cenaReczna = !!p;
+  const dniBox = el("div");
+  box.appendChild(dniBox);
+  const dni = poleFormularza(dniBox, "Dni dzierżawy");
+  dni.inputMode = "numeric";
+  dni.value = String(p?.leaseDni || 30);
+  dniBox.style.display = rodzaj === "Lease" ? "" : "none";
+
+  const podglad = el("div", "crm-tecs-podglad");
+  box.appendChild(podglad);
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", p ? "Zapisz zmiany" : "Dodaj produkt") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const akcje = el("div", "crm-akcje");
+  akcje.append(zapisz, wstecz, komunikat);
+  box.appendChild(akcje);
+  wstecz.onclick = anuluj;
+
+  const num = (i: HTMLInputElement) => {
+    const v = Number(i.value.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(v) ? v : 0;
+  };
+  const wylicz = () => {
+    const cn = ceny.get(produkt.value.trim());
+    const q = num(ilosc), r = num(rabat), d = num(dni);
+    const leaseValue = rodzaj === "Lease" ? wartoscDzierzawy(q, cn?.lease ?? 0, d, r) : 0;
+    return {
+      cn, q, r, d, leaseValue,
+      tpValue: rodzaj === "TP" ? r2(q * (cn?.lease ?? 0)) : 0,
+      suma: sumaTecs(num(cena), q, r, leaseValue),
+    };
+  };
+  function przelicz() {
+    const w = wylicz();
+    podglad.innerHTML = "";
+    const linia = (et: string, v: string) => podglad.appendChild(el("div", undefined, `${et}: ${v}`));
+    linia("Suma", euro(w.suma));
+    if (rodzaj === "TP") linia("Wartość TP", euro(w.tpValue));
+    if (rodzaj === "Lease") linia(`Dzierżawa (×${mnoznikDzierzawy(w.d)})`, euro(w.leaseValue));
+    if (w.cn) linia("Cennik TECS", euro(w.cn.tecs));
+    sprawdz();
+  }
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!produkt.value.trim()) brak.push("produkt");
+    if (num(ilosc) <= 0) brak.push("liczba licencji");
+    if (rodzaj === "Lease" && num(dni) <= 0) brak.push("dni dzierżawy");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  // nowa pozycja: cena podpowiada sie z cennika, dopoki ktos jej nie wpisze recznie
+  produkt.oninput = () => {
+    const cn = ceny.get(produkt.value.trim());
+    if (cn && !cenaReczna) cena.value = String(cn.tecs);
+    przelicz();
+  };
+  cena.oninput = () => {
+    cenaReczna = true;
+    przelicz();
+  };
+  [ilosc, rabat, dni].forEach((i) => (i.oninput = przelicz));
+  przelicz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    const w = wylicz();
+    const pola: Record<string, unknown> = {
+      ProducID: produkt.value.trim(),
+      Liczba_licencji: w.q,
+      Rabat: w.r,
+      Cena_TECS: num(cena),
+      SUMA: w.suma,
+      Lease: rodzaj === "Lease",
+      LeaseDays: rodzaj === "Lease" ? w.d : 0,
+      LeaseValue: w.leaseValue,
+      TP: rodzaj === "TP",
+      TPValue: w.tpValue,
+      FirmaIDofertaTECS: t.firmaId || firmaPelna?.skrocona || c.nazwa,
+      TECSOppsIDoferta: t.nazwa,
+      Koniec_TECS: t.koniec || null,
+      Pocz_x0105_tek_TECS: t.poczatek || null,
+      IdentyfikatorTECS: t.guid,
+      IdentyfikatorCompanies: c.guid,
+    };
+    try {
+      if (p) {
+        await updateTicketFields(p.id, pola, undefined, "Oferty_TECS");
+        poZapisie({
+          ...p, produkt: String(pola.ProducID), ile: w.q, rabat: w.r, cena: num(cena), suma: w.suma,
+          lease: rodzaj === "Lease", leaseDni: rodzaj === "Lease" ? w.d : 0, leaseValue: w.leaseValue,
+          tp: rodzaj === "TP", tpValue: w.tpValue,
+        });
+      } else {
+        poZapisie(toProduktTecs(await createListItem("Oferty_TECS", pola)));
+      }
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
+
+  return box;
 }
 
 // ---------------------------------------------------------------- kody demo
@@ -2693,6 +3683,471 @@ function chipyWyboru<T>(
   });
   box.appendChild(rzad);
   return rzad;
+}
+
+/** iso + lata i dni, np. koniec TECS = poczatek + 1 rok - 1 dzien (jak DateAdd w Power Apps). */
+const plusLatDni = (iso: string, lata: number, dni: number) => {
+  const d = new Date((iso || dzisISO()) + "T12:00:00");
+  d.setFullYear(d.getFullYear() + lata);
+  d.setDate(d.getDate() + dni);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** Nowa szansa TECS w Opps_TECS (conTECSForm z Power Apps), Etap1 = "Przygotowanie oferty". */
+async function formularzNowegoTecs(
+  miejsce: HTMLElement,
+  c: Company,
+  zSzansy: Szansa | null,
+  poZapisie: () => void,
+  anuluj: () => void,
+  edycja: TecsRow | null = null,
+  renewal: TecsRow | null = null
+) {
+  // renewal: nazwa jak w Power Apps z FirmaID poprzedniego TECS-u
+  const skrocona = (renewal?.firmaId) || firmaPelna?.skrocona || c.nazwa;
+  const box = el("div", "crm-nowe crm-demo");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", renewal ? "wykres" : "dokument",
+    edycja ? "Edycja szansy TECS" : renewal ? "Renewal TECS" : "Nowa szansa TECS"));
+  box.appendChild(el("div", "crm-nowe-info",
+    (firmaPelna?.pelna || skrocona) + (zSzansy ? ` · z wygranej szansy: ${zSzansy.nazwa}` : "")
+    + (renewal ? ` · na podstawie: ${renewal.nazwa}` : "")));
+  if (renewal) {
+    const st = el("div", "crm-tecs-poprzedni");
+    st.append(el("div", "crm-tecs-kafel-et", "POPRZEDNI TECS"), el("div", undefined,
+      `Okres: ${dataPL(renewal.poczatek)} – ${dataPL(renewal.koniec)} · Wartość: ${euro(renewal.wartosc)} · ` +
+      `Etap: ${renewal.etap || "—"}${renewal.tp ? " · Tech Pool" : ""}`));
+    box.appendChild(st);
+  }
+
+  // --- okres ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Okres TECS"));
+  const okres = el("div", "crm-demo-okres");
+  box.appendChild(okres);
+  const kolumna = (rodzic: HTMLElement, etykieta: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "date";
+    i.className = "crm-input";
+    k.appendChild(i);
+    rodzic.appendChild(k);
+    return i;
+  };
+  const poczatek = kolumna(okres, "Początek TECS *");
+  const koniec = kolumna(okres, "Koniec TECS *");
+  const follow = poleFormularza(box, "Data follow-up", "date");
+  poczatek.value = dzisISO();
+  koniec.value = plusLatDni(poczatek.value, 1, -1);
+  follow.value = plusLatDni(poczatek.value, 1, -92);
+
+  // nazwa "Q<kwartal konca>_<rok konca>_<skrocona>" - podpowiadana, dopoki ktos jej nie zmieni
+  const nazwa = poleFormularza(box, "Nazwa szansy *");
+  let nazwaReczna = false;
+  const podpowiedzNazwy = () => {
+    if (nazwaReczna || !koniec.value) return;
+    const [rok, mies] = koniec.value.split("-").map(Number);
+    nazwa.value = `Q${Math.ceil(mies / 3)}_${rok}_${skrocona}`;
+  };
+  podpowiedzNazwy();
+  nazwa.oninput = () => {
+    nazwaReczna = true;
+    sprawdz();
+  };
+  poczatek.onchange = () => {
+    if (poczatek.value) {
+      koniec.value = plusLatDni(poczatek.value, 1, -1);
+      follow.value = plusLatDni(poczatek.value, 1, -92);
+    }
+    podpowiedzNazwy();
+    sprawdz();
+  };
+  koniec.onchange = () => {
+    podpowiedzNazwy();
+    sprawdz();
+  };
+
+  const wartosc = poleFormularza(box, "Wartość – End User Price (€) *");
+  wartosc.inputMode = "decimal";
+  wartosc.placeholder = "0";
+  let wartoscReczna = false;
+  const zmianaWartosci = el("div", "crm-komunikat crm-nf-info");
+  if (renewal?.wartosc) box.appendChild(zmianaWartosci);
+  const opiszZmiane = () => {
+    if (!renewal?.wartosc) return;
+    const v = Number(wartosc.value.replace(/\s/g, "").replace(",", "."));
+    const proc = ((Number.isFinite(v) ? v : 0) / renewal.wartosc - 1) * 100;
+    zmianaWartosci.textContent = `zmiana: ${proc >= 0 ? "+" : ""}${proc.toFixed(1).replace(".", ",")}% względem poprzedniego`;
+  };
+  wartosc.oninput = () => {
+    wartoscReczna = true;
+    opiszZmiane();
+    sprawdz();
+  };
+
+  // --- szczegoly ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Szczegóły"));
+  const klient = poleFormularza(box, "Numer klienta Ansys");
+  klient.placeholder = "np. 1234567";
+
+  const tp = document.createElement("input");
+  tp.type = "checkbox";
+  tp.id = `tecs-tp-${nowyGuid()}`;
+  const tpLbl = el("label", "crm-check") as HTMLLabelElement;
+  tpLbl.htmlFor = tp.id;
+  tpLbl.append(tp, el("span", undefined, "TechPool"));
+  box.appendChild(tpLbl);
+
+  box.appendChild(el("label", "crm-label", "Opiekun *"));
+  const opiekun = document.createElement("select");
+  opiekun.className = "crm-select";
+  box.appendChild(opiekun);
+
+  box.appendChild(el("label", "crm-label", "Odbiorca oferty"));
+  const osobaSel = document.createElement("select");
+  osobaSel.className = "crm-select";
+  const brakOsoby = document.createElement("option");
+  brakOsoby.value = "";
+  brakOsoby.textContent = "wybierz osobę z firmy…";
+  osobaSel.appendChild(brakOsoby);
+  box.appendChild(osobaSel);
+  const odbiorca = document.createElement("input");
+  odbiorca.type = "text";
+  odbiorca.className = "crm-input";
+  odbiorca.placeholder = "imię i nazwisko";
+  box.appendChild(odbiorca);
+
+  const linkSF = poleFormularza(box, "Link do Oppsa w SF");
+  linkSF.placeholder = "https://…";
+
+  // --- quote ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Quote"));
+  const quote = poleFormularza(box, "Numer Quota");
+  const quoteLink = poleFormularza(box, "Link do Quota");
+  quoteLink.placeholder = "https://…";
+  box.appendChild(el("label", "crm-label", "Uwagi"));
+  const uwagi = document.createElement("textarea");
+  uwagi.className = "crm-textarea";
+  uwagi.rows = 3;
+  uwagi.placeholder = "Szczegóły oferty, licencje, ustalenia…";
+  box.appendChild(uwagi);
+
+  // --- produkty z wygranej szansy (Oferty po IdentyfikatorOpps) - zaznaczone trafia do Oferty_TECS ---
+  type Propozycja = { produkt: string; ile: number; typ: string; cena: number; rabat: number; wybrana: boolean };
+  let propozycje: Propozycja[] = [];
+  const produktyBox = el("div");
+  const zrodloProduktow = zSzansy?.guid ? "szansy" : renewal?.guid ? "poprzedniego TECS-u" : "";
+  if (zrodloProduktow) {
+    box.appendChild(el("div", "crm-nf-sekcja", renewal ? "Licencje z poprzedniego TECS-u" : "Produkty z szansy"));
+    box.appendChild(produktyBox);
+    produktyBox.appendChild(el("div", "crm-komunikat", `Wczytywanie produktów ${zrodloProduktow}...`));
+  }
+  const sumaPropozycji = () =>
+    r2(propozycje.filter((x) => x.wybrana).reduce((a, x) => a + sumaTecs(x.cena, x.ile, x.rabat), 0));
+  const rysujPropozycje = () => {
+    produktyBox.innerHTML = "";
+    if (!propozycje.length) {
+      produktyBox.appendChild(el("div", "crm-pusto", renewal ? "Poprzedni TECS nie ma licencji." : "Szansa nie ma produktów."));
+      return;
+    }
+    produktyBox.appendChild(el("div", "crm-nowe-info", renewal
+      ? "Zaznaczone przepiszemy do nowego TECS-u z aktualną ceną z cennika i dotychczasowym rabatem."
+      : "Zaznaczone dodamy do TECS-u z ceną TECS z cennika (bez rabatu – zmienisz później w „Produkty i ceny”)."));
+    propozycje.forEach((x, i) => {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = `tecs-prop-${i}-${nowyGuid()}`;
+      cb.checked = x.wybrana;
+      cb.onchange = () => {
+        x.wybrana = cb.checked;
+        if (!wartoscReczna) wartosc.value = String(sumaPropozycji());
+        if (renewal) sumaRenewal.textContent = `Suma zaznaczonych licencji wg cennika: ${euro(sumaPropozycji())}`;
+        sprawdz();
+      };
+      const lbl = el("label", "crm-check crm-tecs-prop") as HTMLLabelElement;
+      lbl.htmlFor = cb.id;
+      lbl.append(cb, el("span", "crm-tecs-prop-nazwa", `${x.produkt} ×${x.ile}`),
+        el("span", "crm-tecs-prop-cena",
+          `${x.typ}${x.rabat ? ` · −${x.rabat}%` : ""} · ${x.cena ? euro(sumaTecs(x.cena, x.ile, x.rabat)) : "brak w cenniku"}`));
+      produktyBox.appendChild(lbl);
+    });
+    if (renewal) {
+      sumaRenewal.textContent = `Suma zaznaczonych licencji wg cennika: ${euro(sumaPropozycji())}`;
+      produktyBox.appendChild(sumaRenewal);
+    }
+  };
+  const sumaRenewal = el("div", "crm-komunikat crm-nf-info");
+
+  // --- przyciski ---
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", edycja ? "Zapisz zmiany" : renewal ? "Utwórz renewal" : "Zapisz szansę TECS") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  const liczba = () => Number(wartosc.value.replace(/\s/g, "").replace(",", "."));
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!nazwa.value.trim()) brak.push("nazwa");
+    if (!poczatek.value) brak.push("początek");
+    if (!koniec.value) brak.push("koniec");
+    else if (poczatek.value && koniec.value < poczatek.value) brak.push("koniec przed początkiem");
+    if (!opiekun.value) brak.push("opiekun");
+    if (!wartosc.value.trim() || !Number.isFinite(liczba())) brak.push("wartość");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  opiekun.onchange = () => sprawdz();
+  sprawdz();
+
+  // --- dane do podpowiedzi: opiekunowie, kontakty, ostatni numer klienta Ansys ---
+  let ja = "";
+  let kontakty: Contact[] = [];
+  let wybrana: Contact | null = null;
+  try {
+    const [osoby, mojaNazwa, kt, tecsy, oferty, ceny] = await Promise.all([
+      getOpiekunowie().catch(() => [] as string[]),
+      getMojaNazwa().catch(() => ""),
+      getContactsByCompany(c.guid).catch(() => [] as ListItem[]),
+      getByCompany("Opps_TECS", c.guid, { top: 200 }).catch(() => [] as ListItem[]),
+      zSzansy?.guid
+        ? getByCompany("Oferty", zSzansy.guid, { pole: "IdentyfikatorOpps", top: 200 }).catch((e) => {
+          console.warn("Oferty szansy:", e);
+          return [] as ListItem[];
+        })
+        : Promise.resolve([] as ListItem[]),
+      zSzansy?.guid || renewal?.guid
+        ? getCenyTecs().catch(() => new Map<string, CenaTecs>())
+        : Promise.resolve(new Map<string, CenaTecs>()),
+    ]);
+    // TECS dotyczy licencji kupionych na wlasnosc (Paid-up) - dzierzawa i AEC/ALH maja serwis w cenie, wiec domyslnie odznaczone
+    propozycje = oferty.map((it) => {
+      const f = it.fields as any;
+      const produkt = String(f.ProductID ?? "").trim();
+      const typ = f.LeaseDays === true ? "Lease" : f.AECYN === true ? "AEC" : f.ALHYN === true ? "ALH" : "Paid-up";
+      return { produkt, ile: Number(f.Liczba_licencji) || 1, typ, cena: ceny.get(produkt)?.tecs ?? 0, rabat: 0, wybrana: typ === "Paid-up" };
+    }).filter((x) => x.produkt);
+    if (renewal?.guid) {
+      // jak "Przepisz": licencje poprzedniego TECS-u, cena z cennika (albo stara), rabat bez zmian
+      const stare = await getByCompany("Oferty_TECS", renewal.guid, { pole: "IdentyfikatorTECS", top: 200 })
+        .catch(() => [] as ListItem[]);
+      propozycje = stare.map(toProduktTecs).filter((x) => x.produkt).map((x) => ({
+        produkt: x.produkt, ile: x.ile || 1, typ: rodzajProduktuTecs(x),
+        cena: ceny.get(x.produkt.trim())?.tecs ?? x.cena, rabat: x.rabat, wybrana: true,
+      }));
+    }
+    if (zrodloProduktow) {
+      rysujPropozycje();
+      if (!wartoscReczna && sumaPropozycji()) wartosc.value = String(sumaPropozycji());
+    }
+    ja = mojaNazwa;
+    const lista = ja && !osoby.includes(ja) ? [ja, ...osoby] : osoby;
+    ["", ...lista].forEach((o) => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o || "wybierz…";
+      opt.selected = o === ja;
+      opiekun.appendChild(opt);
+    });
+    kontakty = kt.map(toContact).filter((x) => x.aktywny)
+      .sort((a, b) => a.imieNazwisko.localeCompare(b.imieNazwisko, "pl"));
+    kontakty.forEach((x, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = x.imieNazwisko + (x.stanowisko ? ` · ${x.stanowisko}` : "");
+      osobaSel.appendChild(opt);
+    });
+    // jak w Power Apps: numer klienta z najnowszego TECS-u firmy, ktory go ma
+    const zNumerem = tecsy
+      .filter((i) => String((i.fields as any).Numer_klienta ?? "").trim())
+      .sort((a, b) => Number(b.id) - Number(a.id))[0];
+    if (zNumerem) klient.value = String((zNumerem.fields as any).Numer_klienta).trim();
+  } catch (e: any) {
+    box.insertBefore(el("div", "crm-komunikat crm-blad", `Nie pobrano podpowiedzi: ${e?.message ?? e}`), brakujace);
+  }
+  osobaSel.onchange = () => {
+    wybrana = osobaSel.value ? kontakty[Number(osobaSel.value)] : null;
+    if (wybrana) odbiorca.value = wybrana.imieNazwisko;
+  };
+
+  // edycja: pola z zapisanego TECS-u zamiast podpowiedzi
+  if (edycja) {
+    const f = edycja.pola;
+    const dzien = (v: unknown) => String(v ?? "").slice(0, 10);
+    poczatek.value = dzien(f.Pocz_x0105_tek_TECS);
+    koniec.value = dzien(f.Koniec_TECS);
+    follow.value = dzien(f.Data_Follow_Up);
+    nazwa.value = edycja.nazwa;
+    nazwaReczna = true;
+    wartosc.value = String(edycja.wartosc || "");
+    wartoscReczna = true;
+    klient.value = String(f.Numer_klienta ?? "");
+    tp.checked = edycja.tp;
+    odbiorca.value = edycja.odbiorca;
+    linkSF.value = linkZPola(f.LinkdoOppsawSF);
+    quote.value = String(f.QuoteNumber ?? "");
+    quoteLink.value = linkZPola(f.QuoteNumberLink);
+    uwagi.value = String(f.UWAGI ?? "");
+    const kto = String(f.TECScreator ?? "").trim();
+    if (kto) {
+      if (!Array.from(opiekun.options).some((o) => o.value === kto)) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = kto;
+        opiekun.appendChild(opt);
+      }
+      opiekun.value = kto;
+    }
+  }
+
+  // renewal (conTECSRenewal): wszystko +1 rok, wartosc +4%, link SF i quote od nowa
+  if (renewal) {
+    const f = renewal.pola;
+    const rokPozniej = (v: unknown) => (String(v ?? "") ? plusLatDni(String(v).slice(0, 10), 1, 0) : "");
+    poczatek.value = rokPozniej(f.Pocz_x0105_tek_TECS);
+    koniec.value = rokPozniej(f.Koniec_TECS);
+    follow.value = rokPozniej(f.Data_Follow_Up);
+    podpowiedzNazwy();
+    wartosc.value = renewal.wartosc ? String(r2(renewal.wartosc * 1.04)) : "";
+    wartoscReczna = true;
+    opiszZmiane();
+    klient.value = String(f.Numer_klienta ?? "");
+    tp.checked = renewal.tp;
+    odbiorca.value = renewal.odbiorca;
+    uwagi.value = String(f.UWAGI ?? "");
+  }
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    try {
+      // pole Osoba wymaga Id uzytkownika witryny - mail wybranego opiekuna
+      const mail = opiekun.value === ja
+        ? await getMojMail()
+        : (await getSerwisanci().catch(() => [])).find((x) => x.nazwa === opiekun.value)?.mail ?? "";
+      const opiekunId = mail ? await getSiteUserId(mail) : null;
+      // w edycji niezmieniony opiekun zostaje jak byl - nie wymagamy, zeby byl na liscie pracownikow
+      const bezZmianyOpiekuna = !!edycja && opiekun.value === String(edycja.pola.TECScreator ?? "").trim();
+      if (opiekunId === null && !bezZmianyOpiekuna) {
+        throw new Error(`nie znaleziono użytkownika witryny dla „${opiekun.value}” – pole Opiekun jest wymagane`);
+      }
+
+      const pola: Record<string, unknown> = {
+        Nazwaszansysprzeda_x017c_y_TECS: nazwa.value.trim(),
+        Numer_klienta: klient.value.trim(),
+        Pocz_x0105_tek_TECS: dzienSP(poczatek.value),
+        Koniec_TECS: dzienSP(koniec.value),
+        Data_Follow_Up: dzienSP(follow.value),
+        Warto_x015b__x0107_: liczba(),
+        Odbiorca_oferty: odbiorca.value.trim(),
+        TP: tp.checked,
+        QuoteNumber: quote.value.trim(),
+        UWAGI: uwagi.value,
+        FirmaID: skrocona,
+        Etap1: "Przygotowanie oferty",
+        TECScreator: opiekun.value,
+        TECSGUID: nowyGuid(),
+        IdentyfikatorCompanies: c.guid,
+      };
+      if (opiekunId !== null) pola.OpiekunLookupId = String(opiekunId);
+      if (renewal) {
+        pola.TECSGUID_OLD = renewal.guid;
+        pola.IdentyfikatorCompanies = renewal.pola.IdentyfikatorCompanies || c.guid;
+      }
+      const guidTecs = String(pola.TECSGUID);
+
+      // edycja: bez nowego GUID, etapu i powiazania z firma; zapis z kontrola wspolbieznosci
+      if (edycja) {
+        ["TECSGUID", "Etap1", "IdentyfikatorCompanies", "FirmaID"].forEach((k) => delete pola[k]);
+        const linkiEd: Record<string, unknown> = {};
+        if (linkSF.value.trim() !== linkZPola(edycja.pola.LinkdoOppsawSF)) linkiEd.LinkdoOppsawSF = linkSF.value.trim() || null;
+        if (quoteLink.value.trim() !== linkZPola(edycja.pola.QuoteNumberLink)) linkiEd.QuoteNumberLink = quoteLink.value.trim() || null;
+        try {
+          await updateTicketFields(edycja.id, { ...pola, ...linkiEd }, edycja.etag || undefined, "Opps_TECS");
+        } catch (e: any) {
+          if (!Object.keys(linkiEd).length || /zmienił/.test(e?.message ?? "")) throw e;
+          console.warn("Opps_TECS z linkami odrzucone, zapis bez linkow:", e);
+          await updateTicketFields(edycja.id, pola, edycja.etag || undefined, "Opps_TECS");
+          komunikat.textContent = "Zapisano bez linków (SF / Quote) – uzupełnij je w Power Apps.";
+          komunikat.className = "crm-komunikat crm-nf-uwaga";
+          setTimeout(poZapisie, 2500);
+          return;
+        }
+        poZapisie();
+        return;
+      }
+      // kolumny Hyperlink - Graph bywa na nie oporny, wiec przy bledzie zapisujemy bez linkow
+      const linki: Record<string, unknown> = {};
+      if (linkSF.value.trim()) linki.LinkdoOppsawSF = linkSF.value.trim();
+      if (quoteLink.value.trim()) linki.QuoteNumberLink = quoteLink.value.trim();
+
+      let bezLinkow = false;
+      let nowy: ListItem;
+      try {
+        nowy = await createListItem("Opps_TECS", { ...pola, ...linki });
+      } catch (e) {
+        if (!Object.keys(linki).length) throw e;
+        console.warn("Opps_TECS z linkami odrzucone, zapis bez linkow:", e);
+        nowy = await createListItem("Opps_TECS", pola);
+        bezLinkow = true;
+      }
+      // po odswiezeniu listy nowy TECS od razu z otwartymi szczegolami
+      otwartySzczegolTecs = String(nowy.id ?? "");
+      // produkty z szansy - TECS juz jest, wiec blad pojedynczej pozycji nie cofa zapisu
+      const uwagiZapisu: string[] = [];
+      if (bezLinkow) uwagiZapisu.push("bez linków (SF / Quote) – uzupełnij je w Power Apps");
+      const doDodania = propozycje.filter((x) => x.wybrana);
+      let dodane = 0;
+      for (const x of doDodania) {
+        komunikat.textContent = `Dodawanie produktów: ${x.produkt}...`;
+        try {
+          await createListItem("Oferty_TECS", {
+            ProducID: x.produkt,
+            Liczba_licencji: x.ile,
+            Cena_TECS: x.cena,
+            Rabat: x.rabat,
+            SUMA: sumaTecs(x.cena, x.ile, x.rabat),
+            TP: tp.checked,
+            TPValue: 0,
+            Lease: false,
+            LeaseDays: 0,
+            LeaseValue: 0,
+            FirmaIDofertaTECS: skrocona,
+            TECSOppsIDoferta: String(pola.Nazwaszansysprzeda_x017c_y_TECS),
+            Pocz_x0105_tek_TECS: pola.Pocz_x0105_tek_TECS,
+            Koniec_TECS: pola.Koniec_TECS,
+            IdentyfikatorTECS: guidTecs,
+            IdentyfikatorCompanies: c.guid,
+          });
+          dodane++;
+        } catch (e) {
+          console.error("produkt TECS z szansy:", x.produkt, e);
+        }
+      }
+      if (dodane < doDodania.length) uwagiZapisu.push(`dodano ${dodane} z ${doDodania.length} produktów – resztę dodaj w „Produkty i ceny”`);
+
+      if (uwagiZapisu.length) {
+        // komunikat zostaje widoczny chwile przed przerysowaniem listy
+        komunikat.textContent = `Zapisano TECS, ale: ${uwagiZapisu.join("; ")}.`;
+        komunikat.className = "crm-komunikat crm-nf-uwaga";
+        setTimeout(poZapisie, 4000);
+      } else poZapisie();
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
 }
 
 /** Nowy wpis kodow demo w Opps_TECS (Demo = true, Etap1 = "Demo"). */
@@ -2884,7 +4339,8 @@ async function formularzKodowDemo(
         id: String(nowy.id ?? (nowy.fields as any)?.id ?? ""), nazwa, wartosc: 0, etap: "Demo",
         poczatek: dzienSP(od.value) ?? "", koniec: dzienSP(doD.value) ?? "",
         tp: false, demo: true, klient: numer.value.trim(),
-        guid, firmaId: skrocona, odbiorca: odbiorca.value.trim(),
+        guid, firmaId: skrocona, odbiorca: odbiorca.value.trim(), guidOld: "",
+        followUp: "", etag: "", pola: {},
       };
       const uwaga = adminId === null
         ? ` (bez administracji - nie znaleziono ${admin.mail} wśród użytkowników witryny CRM, szczegóły w konsoli)`
@@ -3077,11 +4533,21 @@ async function formularzLicencjiDemo(
   };
 }
 
-async function zakladkaSzanse(box: HTMLElement, s: HTMLElement, c: Company) {
+async function zakladkaSzanse(
+  box: HTMLElement,
+  s: HTMLElement,
+  c: Company,
+  odswiezWidok: () => void = () => void pokazFirma(c)
+) {
   segment(box, ["Aktywne", "Zamknięte"], szanseZamkniete ? "Zamknięte" : "Aktywne", (v) => {
     szanseZamkniete = v === "Zamknięte";
-    void pokazFirma(c);
+    odswiezWidok();
   });
+
+  // notatki firmy jednym zapytaniem - przy szansach grupujemy je po Opps_ID
+  const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
+  notatki.catch((e) => console.error("notatki szans:", e));
+  const ja = getMojaNazwa().then((n) => n.trim().toLowerCase(), () => "");
 
   const items = await getByCompany("Opps", c.guid, { top: 100 });
   const lista = items
@@ -3091,29 +4557,762 @@ async function zakladkaSzanse(box: HTMLElement, s: HTMLElement, c: Company) {
   s.textContent = `Szanse — ${lista.length}`;
   if (!lista.length) return pusto(box, szanseZamkniete ? "Brak zamkniętych szans." : "Brak aktywnych szans.");
 
-  lista.forEach((o) => {
-    const k = el("div", "crm-kafel");
-    const [kol, tlo]: [string, string] =
-      o.status === "Zamknięty wygrany" ? ["#16A34A", "#E6F6EE"]
-      : o.status === "Zamknięty przegrany" ? ["#DC2626", "#FEE2E2"]
-      : ["#3860B2", "#EEF0FC"];
-    k.style.borderLeftColor = kol;
+  lista.forEach((o) => box.appendChild(kartaSzansy(o, c, notatki, ja)));
+}
 
-    const gora = el("div", "crm-kafel-rzad");
-    gora.appendChild(poleIk("crm-kafel-nazwa", "cel", o.nazwa, "Nazwa szansy"));
-    const etap = pastylka(o.status || "—", kol, tlo, "flaga");
-    etap.title = "Etap";
-    gora.appendChild(etap);
-    k.appendChild(gora);
+// --- status i etapy szansy (DetailScreen z Power Apps) ---
 
-    const rzad = el("div", "crm-kafel-rzad");
-    rzad.appendChild(poleIk("crm-kafel-wartosc", "euro", euro(o.wartosc), "Wartość"));
-    if (o.typ) rzad.appendChild(pastylka(o.typ, "#2F6FD6", "#E8F0FD", "teczka"));
-    k.appendChild(rzad);
+const STATUSY_SZANSY = [
+  { v: "Aktywny", krotko: "Aktywny", kol: "#5B6CDB", tlo: "#EEF0FC" },
+  { v: "Zamknięty wygrany", krotko: "Wygrany", kol: "#16A34A", tlo: "#E6F6EE" },
+  { v: "Zamknięty przegrany", krotko: "Przegrany", kol: "#DC2626", tlo: "#FEE2E2" },
+];
 
-    k.appendChild(poleIk("crm-kafel-meta", "kalendarz", `Otwarta ${dataPL(o.otwarcie)}`, "Data otwarcia"));
-    box.appendChild(k);
+// Etap1 to tekst - dokladne wartosci jak w Power Apps, kolejnosc wyznacza numer kroku
+const ETAPY_SZANSY: [string, string][] = [
+  ["Pierwszy kontakt", "Kontakt"],
+  ["Discovery", "Discovery"],
+  ["Oferta", "Oferta"],
+  ["Spotkanie techniczne", "Spotk. tech."],
+  ["Demo/Benchmark", "Demo"],
+  ["Decyzja", "Decyzja"],
+  ["Rewizja oferty", "Rewizja"],
+  ["Wdrożenie/Realizacja", "Wdrożenie"],
+];
+
+const POWODY_PRZEGRANEJ: [string, string][] = [
+  ["DR_Odrzucony", "DR odrzucony"],
+  ["Konkurencja", "Konkurencja"],
+  ["BrakDofinansowania", "Brak dofinansowania"],
+];
+const NOTATKA_PRZEGRANEJ = "ZamkniętyOppsNotes"; // nazwa wyswietlana - wewnetrzna ma _x0119_
+
+// pola "Dane etapu" (DetailScreen, zakladki 1-8); klucze jak w Power Apps, wewnetrzne ustala nazwaWewnetrzna
+type TypPolaEtapu = "date" | "text" | "multiline" | "number" | "bool" | "link";
+const POLA_ETAPOW: { klucz: string; etykieta: string; typ: TypPolaEtapu }[][] = [
+  [
+    { klucz: "FTDate", etykieta: "Data spotkania", typ: "date" },
+    { klucz: "TerminDR", etykieta: "Termin DR z SF", typ: "date" },   // display FTDR_date
+  ],
+  [
+    { klucz: "DISCH", etykieta: "Champion", typ: "text" },
+    { klucz: "DISB", etykieta: "Budżet (EUR)", typ: "number" },
+    { klucz: "DISP", etykieta: "Pain", typ: "multiline" },
+  ],
+  [
+    { klucz: "OFP", etykieta: "Czy oferta została wysłana?", typ: "bool" },
+    { klucz: "OFSF", etykieta: "Czy zrobiłeś quote w SF?", typ: "bool" },
+    { klucz: "QuoteNumber", etykieta: "Numer quota", typ: "text" },
+    { klucz: "OFDate", etykieta: "Data spotkania", typ: "date" },
+    { klucz: "QuoteNumberLink", etykieta: "Link do quota", typ: "link" },
+  ],
+  [
+    { klucz: "TMFU", etykieta: "Data follow-up", typ: "date" },
+    { klucz: "TMEB", etykieta: "Economic Buyer – Eb", typ: "text" },
+    { klucz: "TMDP", etykieta: "Proces decyzji – Dp", typ: "multiline" },
+    { klucz: "TMDC", etykieta: "Kryteria – Dc", typ: "multiline" },
+    { klucz: "TMM", etykieta: "Metryki – M", typ: "multiline" },
+  ],
+  [
+    { klucz: "DBDE", etykieta: "Czy będzie Demo/Benchmark?", typ: "bool" },
+    { klucz: "DBDate", etykieta: "Data demo / benchmarku", typ: "date" },
+  ],
+  [
+    { klucz: "DSM", etykieta: "Spotkanie podsumowujące", typ: "date" },
+    { klucz: "DEB", etykieta: "Potwierdzenie Eb", typ: "multiline" },
+  ],
+  [
+    { klucz: "RTL", etykieta: "Czy potrzebne są szkolenia?", typ: "multiline" },
+    { klucz: "RHW", etykieta: "Czy potrzebny jest sprzęt?", typ: "multiline" },
+    { klucz: "RCR", etykieta: "Czy będzie zmiana konfiguracji?", typ: "multiline" },
+  ],
+  [
+    { klucz: "WRDL", etykieta: "Data deadline", typ: "date" },
+    { klucz: "WROF", etykieta: "Czy jest Order Form od klienta?", typ: "bool" },
+    { klucz: "WRO", etykieta: "Zamówienie od klienta", typ: "multiline" },
+  ],
+];
+
+// ostatnio ogladana zakladka danych etapu - przezywa przerysowanie karty po zapisie
+const zakladkaEtapuSzansy = new Map<string, number>();
+
+/** Wartosc pola etapu w postaci do kontrolki formularza. */
+function wartoscDoPola(typ: TypPolaEtapu, v: unknown): string | boolean {
+  if (typ === "bool") return v === true;
+  if (v == null) return "";
+  if (typ === "date") return String(v).slice(0, 10);
+  if (typ === "link") return String((v as any)?.Url ?? v);
+  return String(v);
+}
+
+/** Wartosc z kontrolki w postaci do zapisu w SharePoint (puste -> null czysci pole). */
+function wartoscDoZapisu(typ: TypPolaEtapu, v: string | boolean): unknown {
+  if (typ === "bool") return v === true;
+  const t = String(v);
+  if (typ === "date") return t ? dzienSP(t) : null;
+  if (typ === "number") {
+    const n = Number(t.replace(/\s/g, "").replace(",", "."));
+    return t.trim() && Number.isFinite(n) ? n : null;
+  }
+  return t;
+}
+
+/**
+ * Dane etapu: zakladki 1-8, domyslnie biezacy etap. Zmiany zbieramy ze wszystkich
+ * zakladek i zapisujemy razem - Power Apps zapisywal tylko widoczna i reszta przepadala.
+ */
+async function sekcjaDanychEtapu(box: HTMLElement, o: Szansa, zapisz: (pola: Record<string, unknown>, b?: HTMLButtonElement) => Promise<void>) {
+  const nazwy = new Map<string, string>();
+  await Promise.all(POLA_ETAPOW.flat().map(async (p) => nazwy.set(p.klucz, await nazwaWewnetrzna("Opps", p.klucz))));
+  const oryginal = (p: { klucz: string; typ: TypPolaEtapu }) => wartoscDoPola(p.typ, o.pola[nazwy.get(p.klucz)!]);
+
+  const biezacy = ETAPY_SZANSY.findIndex(([v]) => v === o.etap) + 1;
+  let zakladka = zakladkaEtapuSzansy.get(o.id) ?? Math.max(biezacy, 1);
+  const zmiany = new Map<string, string | boolean>();
+
+  const pasek = el("div", "crm-szansa-zakladki");
+  const pola = el("div", "crm-szansa-pola");
+  const zapiszBtn = el("button", "crm-btn") as HTMLButtonElement;
+  const info = el("div", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapiszBtn, info);
+  box.append(pasek, pola, rzad);
+
+  const odswiezPrzycisk = () => {
+    zapiszBtn.textContent = zmiany.size ? `Zapisz dane etapu (${zmiany.size})` : "Zapisz dane etapu";
+    zapiszBtn.disabled = !zmiany.size;
+    // zakladki z niezapisanymi zmianami oznaczone kropka
+    pasek.querySelectorAll<HTMLButtonElement>(".crm-szansa-zakl").forEach((b, i) => {
+      const brudna = POLA_ETAPOW[i].some((p) => zmiany.has(p.klucz));
+      b.classList.toggle("crm-zakl-zmiany", brudna);
+    });
+  };
+
+  const rysujPola = () => {
+    pola.innerHTML = "";
+    pasek.querySelectorAll(".crm-szansa-zakl").forEach((b, i) => b.classList.toggle("crm-zakl-akt", i + 1 === zakladka));
+    POLA_ETAPOW[zakladka - 1].forEach((p) => {
+      const start = oryginal(p);
+      const teraz = zmiany.has(p.klucz) ? zmiany.get(p.klucz)! : start;
+      const ustaw = (v: string | boolean) => {
+        if (v === start) zmiany.delete(p.klucz);
+        else zmiany.set(p.klucz, v);
+        odswiezPrzycisk();
+      };
+
+      if (p.typ === "bool") {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.id = `etap-${o.id}-${p.klucz}`;
+        cb.checked = teraz === true;
+        cb.onchange = () => ustaw(cb.checked);
+        const lbl = el("label", "crm-check") as HTMLLabelElement;
+        lbl.htmlFor = cb.id;
+        lbl.append(cb, el("span", undefined, p.etykieta));
+        pola.appendChild(lbl);
+        return;
+      }
+
+      pola.appendChild(el("label", "crm-label", p.etykieta));
+      // link (kolumna Hyperlink) tylko do odczytu - zapis Hyperlinka przez Graph jest zawodny
+      if (p.typ === "link") {
+        const url = String(teraz);
+        if (url) {
+          const a = document.createElement("a");
+          a.href = url;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.className = "crm-szansa-link";
+          a.textContent = url;
+          pola.appendChild(a);
+        } else pola.appendChild(el("div", "crm-komunikat", "brak – link uzupełnisz w Power Apps"));
+        return;
+      }
+
+      const pole = p.typ === "multiline" ? document.createElement("textarea") : document.createElement("input");
+      if (pole instanceof HTMLTextAreaElement) {
+        pole.className = "crm-textarea";
+        pole.rows = 3;
+      } else {
+        pole.className = "crm-input";
+        pole.type = p.typ === "date" ? "date" : "text";
+        if (p.typ === "number") pole.inputMode = "decimal";
+      }
+      pole.value = String(teraz);
+      pole.oninput = () => ustaw(pole.value);
+      pola.appendChild(pole);
+    });
+  };
+
+  ETAPY_SZANSY.forEach(([v, krotko], i) => {
+    const nr = i + 1;
+    const b = el("button", "crm-szansa-zakl", `${nr}. ${krotko}${nr === biezacy ? " ●" : ""}`) as HTMLButtonElement;
+    b.title = nr === biezacy ? `${v} – bieżący etap` : v;
+    b.onclick = () => {
+      zakladka = nr;
+      zakladkaEtapuSzansy.set(o.id, nr);
+      rysujPola();
+    };
+    pasek.appendChild(b);
   });
+
+  zapiszBtn.onclick = () => {
+    const doZapisu: Record<string, unknown> = {};
+    POLA_ETAPOW.flat().forEach((p) => {
+      if (zmiany.has(p.klucz)) doZapisu[p.klucz] = wartoscDoZapisu(p.typ, zmiany.get(p.klucz)!);
+    });
+    zakladkaEtapuSzansy.set(o.id, zakladka);
+    void zapisz(doZapisu, zapiszBtn);
+  };
+
+  rysujPola();
+  odswiezPrzycisk();
+}
+
+function kolorStatusuSzansy(status: string): [string, string] {
+  const st = STATUSY_SZANSY.find((x) => x.v === status);
+  return st ? [st.kol, st.tlo] : ["#6B7280", "#F3F4F6"];
+}
+
+/**
+ * Czesciowy zapis szansy z kontrola wspolbieznosci (If-Match) - Power Apps jej nie mial.
+ * Klucze moga byc nazwami wyswietlanymi, tlumaczymy je na wewnetrzne.
+ */
+async function zapiszSzanse(o: Szansa, pola: Record<string, unknown>): Promise<Szansa> {
+  const doZapisu: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(pola)) doZapisu[await nazwaWewnetrzna("Opps", k)] = v;
+  const wynik = await updateTicketFields(o.id, doZapisu, o.etag || undefined, "Opps");
+  // bez nowego etagu nie wysylamy starego - inaczej kolejny zapis dostalby 412
+  const f = { ...o.pola, ...wynik, "@odata.etag": wynik["@odata.etag"] ?? "" };
+  return toSzansa({ id: o.id, fields: f } as unknown as ListItem);
+}
+
+/** Wartosc pola szansy po nazwie wyswietlanej (np. ZamkniętyOppsNotes). */
+async function poleSzansy(o: Szansa, klucz: string): Promise<unknown> {
+  return o.pola[await nazwaWewnetrzna("Opps", klucz)];
+}
+
+/** Panel zarzadzania szansa: status (z data wygranej / powodami przegranej) i etap. */
+function panelSzansy(o: Szansa, c: Company, zmieniona: (nowa: Szansa) => void): HTMLElement {
+  const box = el("div", "crm-szansa-panel");
+  const komunikat = el("div", "crm-komunikat");
+
+  const zapisz = async (pola: Record<string, unknown>, przycisk?: HTMLButtonElement) => {
+    if (przycisk) przycisk.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      zmieniona(await zapiszSzanse(o, pola));
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      if (przycisk) przycisk.disabled = false;
+    }
+  };
+
+  // --- status ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Status"));
+  const statusy = el("div", "crm-szansa-statusy");
+  box.appendChild(statusy);
+  const podforma = el("div");
+  box.appendChild(podforma);
+
+  STATUSY_SZANSY.forEach((st) => {
+    const akt = o.status === st.v;
+    const b = el("button", "crm-szansa-status", (akt ? "✓ " : "") + st.krotko) as HTMLButtonElement;
+    b.style.setProperty("--kol", st.kol);
+    b.style.setProperty("--tlo", st.tlo);
+    b.classList.toggle("crm-szansa-status-akt", akt);
+    b.onclick = () => {
+      podforma.innerHTML = "";
+      komunikat.textContent = "";
+      if (st.v === "Aktywny") formaAktywny(b);
+      else if (st.v === "Zamknięty wygrany") formaWygrany();
+      else void formaPrzegrany();
+    };
+    statusy.appendChild(b);
+  });
+
+  const przyciski = (tekst: string, styl = "crm-btn") => {
+    const ok = el("button", styl, tekst) as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    nie.onclick = () => (podforma.innerHTML = "");
+    const rzad = el("div", "crm-akcje");
+    rzad.append(ok, nie);
+    return { ok, rzad };
+  };
+
+  // powrot do aktywnych czysci dane zamkniecia - Power Apps je zostawial i po ponownym zamknieciu wisialy stare
+  function formaAktywny(b: HTMLButtonElement) {
+    if (o.status === "Aktywny") return;
+    if (!o.status) return void zapisz({ Status1: "Aktywny" }, b);
+    const f = el("div", "crm-nowe crm-szansa-forma");
+    f.appendChild(el("div", "crm-nowe-info",
+      "Przywrócić szansę jako aktywną? Data wygranej i zaznaczone powody przegranej zostaną wyczyszczone (opis przegranej zostaje)."));
+    const { ok, rzad } = przyciski("Przywróć");
+    ok.onclick = () => void zapisz({
+      Status1: "Aktywny",
+      ClosedDateWin: null,
+      DR_Odrzucony: false,
+      Konkurencja: false,
+      BrakDofinansowania: false,
+    }, ok);
+    f.appendChild(rzad);
+    podforma.appendChild(f);
+  }
+
+  function formaWygrany() {
+    const f = el("div", "crm-nowe crm-szansa-forma");
+    const data = poleFormularza(f, "Data zamknięcia *", "date");
+    const bylo = String(o.pola.ClosedDateWin ?? "");
+    data.value = bylo ? bylo.slice(0, 10) : dzisISO();
+    const { ok, rzad } = przyciski(o.status === "Zamknięty wygrany" ? "Zapisz datę" : "Oznacz jako wygraną");
+    // jak w Power Apps: wygrana i od razu formularz nowej szansy TECS dla firmy
+    const zTecs = el("button", "crm-btn crm-btn-cichy", "Zapisz i utwórz TECS") as HTMLButtonElement;
+    rzad.insertBefore(zTecs, rzad.lastChild);
+    data.oninput = () => (ok.disabled = zTecs.disabled = !data.value);
+    const pola = () => ({ Status1: "Zamknięty wygrany", ClosedDateWin: dzienSP(data.value) });
+    ok.onclick = () => void zapisz(pola(), ok);
+    zTecs.onclick = async () => {
+      zTecs.disabled = ok.disabled = true;
+      komunikat.textContent = "Zapisywanie...";
+      komunikat.className = "crm-komunikat";
+      try {
+        nowyTecsZSzansy = await zapiszSzanse(o, pola());
+        zakladkaFirmy = "TECS";
+        tecsTryb = "Bieżące";
+        otworzNowyTecs = true;
+        await pokazFirma(c);
+      } catch (e: any) {
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+        zTecs.disabled = ok.disabled = false;
+      }
+    };
+    f.appendChild(rzad);
+    podforma.appendChild(f);
+  }
+
+  async function formaPrzegrany() {
+    const f = el("div", "crm-nowe crm-szansa-forma");
+    podforma.appendChild(f);
+    f.appendChild(el("label", "crm-label", "Powód przegranej"));
+    const wybrane = new Set<string>();
+    const chipy = el("div", "crm-chipy");
+    f.appendChild(chipy);
+    for (const [pole, tekst] of POWODY_PRZEGRANEJ) {
+      const b = el("button", "crm-chip-wybor", tekst) as HTMLButtonElement;
+      if ((await poleSzansy(o, pole)) === true) wybrane.add(pole);
+      b.classList.toggle("crm-chip-akt", wybrane.has(pole));
+      b.onclick = () => {
+        if (wybrane.has(pole)) wybrane.delete(pole);
+        else wybrane.add(pole);
+        b.classList.toggle("crm-chip-akt", wybrane.has(pole));
+        sprawdz();
+      };
+      chipy.appendChild(b);
+    }
+    f.appendChild(el("label", "crm-label", "Opis"));
+    const ta = document.createElement("textarea");
+    ta.className = "crm-textarea";
+    ta.rows = 3;
+    ta.placeholder = "Dlaczego szansa została przegrana?";
+    ta.value = String((await poleSzansy(o, NOTATKA_PRZEGRANEJ)) ?? "");
+    ta.oninput = () => sprawdz();
+    f.appendChild(ta);
+
+    // Power Apps pozwalal zamknac bez powodu - wymagamy powodu albo opisu
+    const brak = el("div", "crm-podpowiedz");
+    f.appendChild(brak);
+    const { ok, rzad } = przyciski(o.status === "Zamknięty przegrany" ? "Zapisz zmiany" : "Zamknij jako przegraną",
+      "crm-btn crm-btn-ostrz");
+    f.appendChild(rzad);
+    function sprawdz() {
+      const pusto = !wybrane.size && !ta.value.trim();
+      ok.disabled = pusto;
+      brak.textContent = pusto ? "Zaznacz powód albo opisz, dlaczego szansa przepadła." : "";
+      brak.style.display = pusto ? "block" : "none";
+    }
+    sprawdz();
+    ok.onclick = () => {
+      const pola: Record<string, unknown> = { Status1: "Zamknięty przegrany", [NOTATKA_PRZEGRANEJ]: ta.value };
+      POWODY_PRZEGRANEJ.forEach(([pole]) => (pola[pole] = wybrane.has(pole)));
+      void zapisz(pola, ok);
+    };
+  }
+
+  // --- etap: klik zapisuje od razu, mozna cofac (jak w Power Apps); status sie nie zmienia ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Etap"));
+  const kroki = el("div", "crm-szansa-etapy");
+  box.appendChild(kroki);
+  const biezacy = ETAPY_SZANSY.findIndex(([v]) => v === o.etap) + 1;
+  ETAPY_SZANSY.forEach(([v, krotko], i) => {
+    const nr = i + 1;
+    const b = el("button", "crm-szansa-krok", `${nr < biezacy ? "✓" : nr + "."} ${krotko}`) as HTMLButtonElement;
+    b.title = v;
+    b.classList.add(nr === biezacy ? "crm-krok-biez" : nr < biezacy ? "crm-krok-ok" : "crm-krok-przysz");
+    b.onclick = () => {
+      if (nr === biezacy) return;
+      void zapisz({ Etap1: v }, b);
+    };
+    kroki.appendChild(b);
+  });
+
+  box.appendChild(el("div", "crm-nf-sekcja", "Dane etapu"));
+  const dane = el("div");
+  box.appendChild(dane);
+  sekcjaDanychEtapu(dane, o, zapisz).catch((e) =>
+    dane.appendChild(el("div", "crm-komunikat crm-blad", `Nie wczytano pól etapu: ${e?.message ?? e}`))
+  );
+
+  box.appendChild(komunikat);
+  return box;
+}
+
+function kartaSzansy(
+  o: Szansa,
+  c: Company,
+  notatki: Promise<Nota[]>,
+  ja: Promise<string>,
+  panelOtwarty = false
+): HTMLElement {
+  const k = el("div", "crm-kafel");
+  const [kol, tlo] = kolorStatusuSzansy(o.status);
+  k.style.borderLeftColor = kol;
+
+  const gora = el("div", "crm-kafel-rzad");
+  gora.appendChild(poleIk("crm-kafel-nazwa", "cel", o.nazwa, "Nazwa szansy"));
+  const status = pastylka(o.status || "—", kol, tlo, "flaga");
+  status.title = "Status";
+  gora.appendChild(status);
+  k.appendChild(gora);
+
+  const rzad = el("div", "crm-kafel-rzad");
+  rzad.appendChild(poleIk("crm-kafel-wartosc", "euro", euro(o.wartosc), "Wartość"));
+  if (o.typ) rzad.appendChild(pastylka(o.typ, "#2F6FD6", "#E8F0FD", "teczka"));
+  k.appendChild(rzad);
+
+  if (o.etap) {
+    const nr = ETAPY_SZANSY.findIndex(([v]) => v === o.etap) + 1;
+    k.appendChild(poleIk("crm-kafel-meta", "wykres", `Etap: ${nr ? `${nr}/8 · ` : ""}${o.etap}`, "Etap sprzedaży"));
+    if (nr) {
+      const postep = el("div", "crm-szansa-postep");
+      postep.title = `Etap ${nr} z ${ETAPY_SZANSY.length}`;
+      ETAPY_SZANSY.forEach((_, i) => {
+        const odc = el("span", "crm-szansa-odc");
+        if (i < nr) odc.style.background = kol;
+        postep.appendChild(odc);
+      });
+      k.appendChild(postep);
+    }
+  }
+  k.appendChild(poleIk("crm-kafel-meta", "kalendarz", `Otwarta ${dataPL(o.otwarcie)}`, "Data otwarcia"));
+
+  const akcje = el("div", "crm-akcje crm-szansa-akcje");
+  k.appendChild(akcje);
+  const btnPanel = przyciskIk("crm-btn crm-btn-cichy", "flaga", "Status i etap");
+  akcje.appendChild(btnPanel);
+  const panelBox = el("div");
+  k.appendChild(panelBox);
+
+  // po zapisie karta rysowana od nowa (kolor, status, etap) z otwartym panelem
+  const pokazPanel = () => {
+    panelBox.appendChild(panelSzansy(o, c, (nowa) => k.replaceWith(kartaSzansy(nowa, c, notatki, ja, true))));
+    btnPanel.classList.add("crm-btn-wcisniety");
+  };
+  btnPanel.onclick = () => {
+    if (panelBox.childElementCount) {
+      panelBox.innerHTML = "";
+      btnPanel.classList.remove("crm-btn-wcisniety");
+    } else pokazPanel();
+  };
+  if (panelOtwarty) pokazPanel();
+
+  // notatki szansy - bez OPPSGUID nie da sie ich powiazac
+  if (!o.guid) return k;
+
+  const btnNoty = przyciskIk("crm-btn crm-btn-cichy", "dymek", "Notatki …");
+  const btnNowa = przyciskIk("crm-btn", "pioro", "Dodaj notatkę");
+  akcje.append(btnNoty, btnNowa);
+  const formBox = el("div");
+  k.appendChild(formBox);
+  const listaNot = el("div", "crm-szansa-noty");
+  listaNot.style.display = "none";
+  k.appendChild(listaNot);
+
+  let moje: Nota[] = [];
+  let mojeJa = "";
+  const etykieta = btnNoty.querySelector("span")!;
+  const rysuj = () => {
+    etykieta.textContent = `Notatki (${moje.length})`;
+    listaNot.innerHTML = "";
+    if (!moje.length) listaNot.appendChild(el("div", "crm-pusto", "Brak notatek do tej szansy."));
+    moje.forEach((nt) => listaNot.appendChild(kartaNotatki(nt, mojeJa, () => {
+      moje = moje.filter((x) => x !== nt);
+      // wspolna lista firmy tez - karta po zmianie statusu rysuje sie z niej od nowa
+      void notatki.then((a) => {
+        const i = a.indexOf(nt);
+        if (i >= 0) a.splice(i, 1);
+      });
+      rysuj();
+    })));
+  };
+  Promise.all([notatki, ja]).then(
+    ([wszystkie, j]) => {
+      mojeJa = j;
+      moje = wszystkie.filter((n) => n.opps === o.guid).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+      rysuj();
+    },
+    () => (etykieta.textContent = "Notatki (błąd)")
+  );
+
+  btnNoty.onclick = () => {
+    const widac = listaNot.style.display !== "none";
+    listaNot.style.display = widac ? "none" : "";
+    btnNoty.classList.toggle("crm-btn-wcisniety", !widac);
+  };
+  btnNowa.onclick = () => {
+    btnNowa.disabled = true;
+    const zamknij = () => {
+      formBox.innerHTML = "";
+      btnNowa.disabled = false;
+    };
+    void formularzNotatkiSzansy(formBox, o, c, (nt) => {
+      zamknij();
+      moje = [nt, ...moje];
+      void notatki.then((a) => a.push(nt));
+      rysuj();
+      listaNot.style.display = "";
+      btnNoty.classList.add("crm-btn-wcisniety");
+    }, zamknij);
+  };
+
+  return k;
+}
+
+/** Nowa notatka do szansy (Notes.Opps_ID = OPPSGUID). Odpowiednik conNotatkaOpp z Power Apps. */
+async function formularzNotatkiSzansy(
+  miejsce: HTMLElement,
+  o: Szansa,
+  c: Company,
+  poZapisie: (nt: Nota) => void,
+  anuluj: () => void
+) {
+  const box = el("div", "crm-nowe crm-demo");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "dokument", "Nowa notatka"));
+  box.appendChild(el("div", "crm-nowe-info", `${o.firma || c.nazwa} — ${o.nazwa}`));
+
+  const data = poleFormularza(box, "Data wydarzenia *", "date");
+  data.value = dzisISO();
+
+  // --- osoba: z kontaktow firmy albo wpisana recznie ---
+  box.appendChild(el("label", "crm-label", "Osoba *"));
+  const osobaSel = document.createElement("select");
+  osobaSel.className = "crm-select";
+  const brakOsoby = document.createElement("option");
+  brakOsoby.value = "";
+  brakOsoby.textContent = "wybierz osobę z firmy…";
+  osobaSel.appendChild(brakOsoby);
+  box.appendChild(osobaSel);
+  const osoba = document.createElement("input");
+  osoba.type = "text";
+  osoba.className = "crm-input";
+  osoba.placeholder = "imię i nazwisko";
+  box.appendChild(osoba);
+
+  let kontakty: Contact[] = [];
+  let wybrana: Contact | null = null;
+  try {
+    kontakty = (await getContactsByCompany(o.companyGuid || c.guid)).map(toContact)
+      .filter((x) => x.aktywny)
+      .sort((a, b) => a.imieNazwisko.localeCompare(b.imieNazwisko, "pl"));
+    kontakty.forEach((x, i) => {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = x.imieNazwisko + (x.stanowisko ? ` · ${x.stanowisko}` : "");
+      osobaSel.appendChild(opt);
+    });
+  } catch (e: any) {
+    brakOsoby.textContent = `kontakty: ${e?.message ?? e}`;
+  }
+  osobaSel.onchange = () => {
+    wybrana = osobaSel.value ? kontakty[Number(osobaSel.value)] : null;
+    if (wybrana) osoba.value = wybrana.imieNazwisko;
+    sprawdz();
+  };
+  osoba.oninput = () => {
+    if (wybrana && osoba.value.trim() !== wybrana.imieNazwisko) {
+      wybrana = null;
+      osobaSel.value = "";
+    }
+    sprawdz();
+  };
+
+  // domyslnie nadawca otwartego maila, jesli jest w tej firmie
+  const nadawca = ((Office.context.mailbox.item as Office.MessageRead)?.from?.emailAddress ?? "").toLowerCase();
+  const iNadawcy = kontakty.findIndex((x) => nadawca && x.email.toLowerCase() === nadawca);
+  if (iNadawcy >= 0) {
+    osobaSel.value = String(iNadawcy);
+    wybrana = kontakty[iNadawcy];
+    osoba.value = wybrana.imieNazwisko;
+  }
+
+  // --- rodzaj interakcji (lookup do listy activities) ---
+  box.appendChild(el("label", "crm-label", "Rodzaj interakcji *"));
+  const rodzaje = el("div", "crm-chipy crm-chipy-rowne");
+  box.appendChild(rodzaje);
+  let rodzaj = "";
+  let rodzajId = "";
+  try {
+    const opcje = await getLookupOptions("activities", "Notes_types");
+    opcje.forEach((op) => {
+      const b = chipRodzaju(op.etykieta);
+      b.onclick = () => {
+        rodzaj = op.etykieta;
+        rodzajId = op.id;
+        rodzaje.querySelectorAll(".crm-chip-wybor").forEach((x) => x.classList.remove("crm-chip-akt"));
+        b.classList.add("crm-chip-akt");
+        sprawdz();
+      };
+      rodzaje.appendChild(b);
+    });
+  } catch (e: any) {
+    box.appendChild(el("div", "crm-nowe-info", `Nie pobrano rodzajów: ${e?.message ?? e}`));
+  }
+  const mail = opcjaMaila(box, () => sprawdz());
+
+  box.appendChild(el("label", "crm-label", "Notatka *"));
+  const ta = document.createElement("textarea");
+  ta.className = "crm-textarea";
+  ta.rows = 5;
+  ta.placeholder = "Co ustaliliście?";
+  ta.oninput = () => sprawdz();
+  box.appendChild(ta);
+
+  // --- follow-up ---
+  const fu = document.createElement("input");
+  fu.type = "checkbox";
+  fu.id = `fu-opp-${o.id}`;
+  const fuLbl = el("label", "crm-check") as HTMLLabelElement;
+  fuLbl.htmlFor = fu.id;
+  fuLbl.append(fu, el("span", undefined, "Follow-up (przypomnienie)"));
+  box.appendChild(fuLbl);
+
+  const fuBox = el("div");
+  fuBox.style.display = "none";
+  box.appendChild(fuBox);
+  const fuData = document.createElement("input");
+  fuData.type = "date";
+  fuData.className = "crm-input";
+  fuData.value = plusDni(data.value, 7);
+  fuBox.appendChild(fuData);
+  let fuDni = 7;
+  chipyWyboru(
+    fuBox,
+    [7, 14, 21, 28, 56].map((d) => ({ tekst: d === 56 ? "+2 mies." : `+${d} dni`, wartosc: d })),
+    fuDni,
+    (d) => {
+      fuDni = d;
+      fuData.value = plusDni(data.value, d);
+      opiszFu();
+    }
+  );
+  const fuInfo = el("div", "crm-komunikat");
+  fuBox.appendChild(fuInfo);
+  const opiszFu = () => {
+    if (!fuData.value) return (fuInfo.textContent = "");
+    const d = new Date(fuData.value + "T12:00:00");
+    const za = Math.round((d.getTime() - new Date(dzisISO() + "T12:00:00").getTime()) / 86400000);
+    fuInfo.textContent = `Przypomnienie: ${d.toLocaleDateString("pl-PL", {
+      weekday: "long", day: "numeric", month: "long", year: "numeric",
+    })} (za ${za} dni)`;
+  };
+  opiszFu();
+  fuData.onchange = opiszFu;
+  data.onchange = () => {
+    fuData.value = plusDni(data.value, fuDni);
+    opiszFu();
+    sprawdz();
+  };
+  fu.onchange = () => (fuBox.style.display = fu.checked ? "" : "none");
+
+  // --- przyciski ---
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", "Zapisz notatkę") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!data.value) brak.push("data");
+    if (!osoba.value.trim()) brak.push("osoba");
+    if (!rodzajId) brak.push("rodzaj");
+    mail.pokaz(rodzaj);
+    if (!ta.value.trim() && !mail.wlaczony) brak.push("treść");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  }
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+
+    let autor = "";
+    try {
+      autor = await getMojaNazwa();
+    } catch {
+      autor = Office.context.mailbox.userProfile.displayName ?? "";
+    }
+
+    const followUp = fu.checked && fuData.value ? dzienSP(fuData.value) : null;
+    const pola: Record<string, unknown> = {
+      Data: dzienSP(data.value),
+      Osoba: osoba.value.trim(),
+      Telefon: wybrana?.telefon ?? "",
+      TypeLookupId: rodzajId,
+      Rodzaj1: rodzaj,
+      Totatka: ta.value,            // uwaga: literowka w nazwie kolumny
+      Firma: o.firma || firmaPelna?.skrocona || c.nazwa,
+      Creator: autor,
+      Opps_ID: o.guid,
+      Etap: o.etap,
+      IdentyfikatorCompanies: o.companyGuid || c.guid,
+    };
+    if (followUp) pola["Follow_up"] = followUp;
+
+    try {
+      if (mail.wlaczony) Object.assign(pola, await mail.pola());
+      const nowy = await createListItem("Notes", pola);
+      poZapisie({
+        id: String(nowy.id ?? ""),
+        data: String(pola.Data ?? ""),
+        osoba: osoba.value.trim(),
+        rodzaj,
+        rodzajId,
+        tresc: ta.value,
+        autor,
+        followUp: followUp ?? "",
+        followDone: false,
+        opps: o.guid,
+      });
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = false;
+    }
+  };
 }
 
 async function zakladkaPosiadane(box: HTMLElement, s: HTMLElement, c: Company) {
@@ -3345,5 +5544,6 @@ async function odswiez() {
     firmaPelna = null; // wymus ponowne pobranie danych firmy
     return pokazFirma(ostatniaFirma);
   }
+  if (widok === "szanse") return pokazSzanse();
   return pokazZgloszenia();
 }
