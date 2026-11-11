@@ -5,6 +5,9 @@ import { PublicClientApplication } from "@azure/msal-browser";
 import { msalConfig, graphScopes } from "../taskpane/authConfig";
 
 const dialogRedirect = `${window.location.origin}/dialog.html`;
+// panel moze poprosic o dodatkowy zakres (np. Contacts.ReadWrite) - ?scopes=a b
+const zParametru = new URLSearchParams(window.location.search).get("scopes");
+const scopes = zParametru ? zParametru.split(" ").filter(Boolean) : graphScopes;
 
 Office.onReady(async () => {
   try {
@@ -26,7 +29,7 @@ Office.onReady(async () => {
     const account = app.getAllAccounts()[0];
     if (account) {
       try {
-        const silent = await app.acquireTokenSilent({ scopes: graphScopes, account });
+        const silent = await app.acquireTokenSilent({ scopes, account });
         send({ ok: true, token: silent.accessToken });
         return;
       } catch {
@@ -35,7 +38,7 @@ Office.onReady(async () => {
     }
 
     // Pelne logowanie: przekierowanie w obrebie okna dialogu.
-    await app.loginRedirect({ scopes: graphScopes, redirectUri: dialogRedirect });
+    await app.loginRedirect({ scopes, redirectUri: dialogRedirect });
   } catch (e: any) {
     show(`Blad logowania: ${e?.message ?? e}`);
     send({ ok: false, error: String(e?.message ?? e) });

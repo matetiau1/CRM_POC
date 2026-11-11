@@ -44,9 +44,10 @@ function getMsal(): Promise<IPublicClientApplication> {
 }
 
 /** Okno logowania przez Outlooka - sciezka awaryjna dla classic Outlook (macOS). */
-function tokenViaOfficeDialog(): Promise<string> {
+function tokenViaOfficeDialog(scopes: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const url = `${window.location.origin}/dialog.html`;
+    const dodatkowe = scopes === graphScopes ? "" : `?scopes=${encodeURIComponent(scopes.join(" "))}`;
+    const url = `${window.location.origin}/dialog.html${dodatkowe}`;
 
     Office.context.ui.displayDialogAsync(
       url,
@@ -77,14 +78,14 @@ function tokenViaOfficeDialog(): Promise<string> {
   });
 }
 
-async function acquire(): Promise<string> {
+async function acquire(scopes: string[] = graphScopes): Promise<string> {
   const instancja = await getMsal();
   const konto = instancja.getAllAccounts()[0] ?? null;
 
   // 1. Po cichu - dziala i pod NAA, i w trybie zwyklym
   try {
     const res = await instancja.acquireTokenSilent({
-      scopes: graphScopes,
+      scopes,
       ...(konto ? { account: konto } : {}),
     });
     return res.accessToken;
@@ -96,12 +97,12 @@ async function acquire(): Promise<string> {
   // 2. Interaktywnie
   if (naaDostepne()) {
     // pod NAA popup jest wspierany i obsluguje go host
-    const res = await instancja.acquireTokenPopup({ scopes: graphScopes });
+    const res = await instancja.acquireTokenPopup({ scopes });
     return res.accessToken;
   }
 
   // classic Outlook: popup nie ma kanalu powrotnego, wiec okno Office
-  return tokenViaOfficeDialog();
+  return tokenViaOfficeDialog(scopes);
 }
 
 let tokenPromise: Promise<string> | null = null;
@@ -117,6 +118,228 @@ export function getToken(): Promise<string> {
     });
   }
   return tokenPromise;
+}
+
+// Kontakty Outlooka - zgoda pytana dopiero przy pierwszym uzyciu, zeby nie
+// blokowac logowania calego dodatku, gdy tenant wymaga zgody administratora
+const ZAKRES_KONTAKTOW = ["Contacts.ReadWrite"];
+
+export type KontaktOutlook = {
+  imie: string;
+  nazwisko: string;
+  email: string;
+  telefon: string;
+  firma: string;
+  stanowisko: string;
+};
+
+/** Dodaje osobe do kontaktow Outlooka zalogowanego. false = juz tam jest. */
+export async function dodajDoKontaktowOutlook(k: KontaktOutlook): Promise<boolean> {
+  let token: string;
+  try {
+    token = await acquire(ZAKRES_KONTAKTOW);
+  } catch (e: any) {
+    throw new Error(`Brak zgody na dostęp do kontaktów Outlooka (Contacts.ReadWrite): ${e?.message ?? e}`);
+  }
+  const naglowki = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const q = (v: string) => v.replace(/'/g, "''");
+
+  // duplikat: po adresie, a bez adresu po imieniu i nazwisku - jak w Power Apps
+  const filtr = k.email
+    ? `emailAddresses/any(a:a/address eq '${q(k.email)}')`
+    : `givenName eq '${q(k.imie)}' and surname eq '${q(k.nazwisko)}'`;
+  const r = await fetch(`${GRAPH}/me/contacts?$filter=${encodeURIComponent(filtr)}&$top=1&$select=id`, {
+    headers: naglowki,
+  });
+  if (!r.ok) throw new Error(`Graph ${r.status}: ${await r.text()}`);
+  if (((await r.json()) as any).value?.length) return false;
+
+  const nowy = await fetch(`${GRAPH}/me/contacts`, {
+    method: "POST",
+    headers: naglowki,
+    body: JSON.stringify({
+      givenName: k.imie,
+      surname: k.nazwisko,
+      companyName: k.firma,
+      jobTitle: k.stanowisko || undefined,
+      emailAddresses: k.email ? [{ name: `${k.imie} ${k.nazwisko}`.trim(), address: k.email }] : [],
+      businessPhones: k.telefon ? [k.telefon] : [],
+    }),
+  });
+  if (!nowy.ok) throw new Error(`Graph ${nowy.status}: ${await nowy.text()}`);
+  return true;
+}
+
+// Zalaczniki elementow listy - Graph ich nie obsluguje, wiec SharePoint REST
+// z osobnym tokenem dla zasobu SharePoint (zgoda przy pierwszym uzyciu)
+const ZAKRES_SHAREPOINT = [`https://${SP_HOST}/AllSites.Write`];
+
+export type Zalacznik = { nazwa: string; url: string };
+
+async function spRest(listName: string, itemId: string, sciezka: string, init: RequestInit = {}): Promise<Response> {
+  const graphToken = await getToken();
+  const siteId = await getSiteId(graphToken);
+  // id listy z Graph to ten sam GUID co w SharePoint - nie zalezymy od tytulu
+  const listId = await getListId(siteId, listName, graphToken);
+  let token: string;
+  try {
+    token = await acquire(ZAKRES_SHAREPOINT);
+  } catch (e: any) {
+    throw new Error(`Brak zgody na dostęp do plików SharePoint: ${e?.message ?? e}`);
+  }
+  const r = await fetch(
+    `https://${SP_HOST}${SP_SITE_PATH}/_api/web/lists(guid'${listId}')/items(${itemId})/AttachmentFiles${sciezka}`,
+    {
+      ...init,
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json;odata=nometadata", ...(init.headers ?? {}) },
+    }
+  );
+  if (!r.ok) {
+    const t = await r.text();
+    const msg = /"message":\s*\{[^}]*"value":\s*"([^"]+)"/.exec(t)?.[1] ?? /"message":\s*"([^"]+)"/.exec(t)?.[1];
+    throw new Error(`SharePoint ${r.status}: ${msg ?? t.slice(0, 200)}`);
+  }
+  return r;
+}
+
+/** Zalaczniki elementu listy (np. oferty z generatora przy Opps / Opps_TECS). */
+export async function getZalaczniki(listName: string, itemId: string): Promise<Zalacznik[]> {
+  const r = await spRest(listName, itemId, "");
+  const dane = (await r.json()) as { value: Array<{ FileName: string; ServerRelativeUrl: string }> };
+  return dane.value.map((z) => ({ nazwa: z.FileName, url: `https://${SP_HOST}${z.ServerRelativeUrl}` }));
+}
+
+/** Dodaje plik jako zalacznik elementu listy. Ta sama nazwa = blad SharePointa. */
+export async function dodajZalacznik(listName: string, itemId: string, nazwa: string, tresc: ArrayBuffer): Promise<void> {
+  await spRest(listName, itemId, `/add(FileName='${encodeURIComponent(nazwa.replace(/'/g, "''"))}')`, {
+    method: "POST",
+    body: tresc,
+  });
+}
+
+/** Tresc zalacznika elementu listy - do skopiowania np. do folderu firmy. */
+export async function pobierzZalacznik(listName: string, itemId: string, nazwa: string): Promise<ArrayBuffer> {
+  const r = await spRest(listName, itemId, `/getByFileName('${encodeURIComponent(nazwa.replace(/'/g, "''"))}')/$value`);
+  return r.arrayBuffer();
+}
+
+/** Usuwa zalacznik elementu listy po nazwie pliku. */
+export async function usunZalacznik(listName: string, itemId: string, nazwa: string): Promise<void> {
+  await spRest(listName, itemId, `/getByFileName('${encodeURIComponent(nazwa.replace(/'/g, "''"))}')`, {
+    method: "DELETE",
+  });
+}
+
+// ---- folder dokumentow firmy w bibliotece witryny (Shared Documents) - przez Graph
+
+export type PlikSP = {
+  id: string;
+  nazwa: string;
+  folder: boolean;
+  rozmiar: number;
+  zmieniony: string;
+  kto: string;
+  url: string;
+};
+
+const sciezkaDrive = (sciezka: string) => sciezka.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+
+async function driveFetch(sciezka: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  return fetch(`${GRAPH}/sites/${siteId}/drive${sciezka}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+  });
+}
+
+async function bladDrive(r: Response): Promise<Error> {
+  const t = await r.text();
+  const msg = /"message":\s*"([^"]+)"/.exec(t)?.[1];
+  return new Error(`SharePoint ${r.status}: ${msg ?? t.slice(0, 200)}`);
+}
+
+/** Zawartosc folderu; null = folder nie istnieje. */
+export async function getPlikiFolderu(sciezka: string): Promise<PlikSP[] | null> {
+  const pola = "id,name,size,lastModifiedDateTime,lastModifiedBy,webUrl,folder,file";
+  let url: string | null = `/root:/${sciezkaDrive(sciezka)}:/children?$select=${pola}&$top=200`;
+  const wynik: PlikSP[] = [];
+  while (url) {
+    const r = await driveFetch(url);
+    if (r.status === 404) return null;
+    if (!r.ok) throw await bladDrive(r);
+    const dane = (await r.json()) as { value: any[]; "@odata.nextLink"?: string };
+    dane.value.forEach((i) => wynik.push({
+      id: i.id,
+      nazwa: i.name,
+      folder: !!i.folder,
+      rozmiar: Number(i.size) || 0,
+      zmieniony: i.lastModifiedDateTime ?? "",
+      kto: i.lastModifiedBy?.user?.displayName ?? "",
+      url: i.webUrl ?? "",
+    }));
+    const dalej = dane["@odata.nextLink"];
+    url = dalej ? dalej.slice(dalej.indexOf("/drive") + "/drive".length) : null;
+  }
+  return wynik;
+}
+
+/** Adres folderu w przegladarce (do "Otworz w SharePoint"). */
+export async function getUrlFolderu(sciezka: string): Promise<string | null> {
+  const r = await driveFetch(`/root:/${sciezkaDrive(sciezka)}?$select=webUrl`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw await bladDrive(r);
+  return ((await r.json()) as any).webUrl ?? null;
+}
+
+/** Tworzy folder w istniejacym folderze nadrzednym. */
+export async function utworzFolder(nadrzedny: string, nazwa: string): Promise<void> {
+  const r = await driveFetch(`/root:/${sciezkaDrive(nadrzedny)}:/children`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: nazwa, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+  });
+  if (!r.ok) throw await bladDrive(r);
+}
+
+const MALY_PLIK = 4 * 1024 * 1024;
+const KAWALEK = 320 * 1024 * 16; // wielokrotnosc 320 KiB, wymog sesji przesylania
+
+/** Wysyla plik do folderu. Ta sama nazwa = blad, nic nie nadpisujemy. */
+export async function wyslijPlik(folder: string, nazwa: string, tresc: ArrayBuffer): Promise<void> {
+  const cel = `/root:/${sciezkaDrive(folder + "/" + nazwa)}:`;
+  if (tresc.byteLength <= MALY_PLIK) {
+    const r = await driveFetch(`${cel}/content?@microsoft.graph.conflictBehavior=fail`, { method: "PUT", body: tresc });
+    if (!r.ok) throw await bladDrive(r);
+    return;
+  }
+  // wiekszy plik - sesja przesylania w kawalkach
+  const s = await driveFetch(`${cel}/createUploadSession`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "fail" } }),
+  });
+  if (!s.ok) throw await bladDrive(s);
+  const { uploadUrl } = (await s.json()) as { uploadUrl: string };
+  for (let od = 0; od < tresc.byteLength; od += KAWALEK) {
+    const doo = Math.min(od + KAWALEK, tresc.byteLength);
+    // adres sesji jest juz podpisany - bez naglowka Authorization
+    const r = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Range": `bytes ${od}-${doo - 1}/${tresc.byteLength}` },
+      body: tresc.slice(od, doo),
+    });
+    if (!r.ok) {
+      void fetch(uploadUrl, { method: "DELETE" }).catch(() => undefined);
+      throw await bladDrive(r);
+    }
+  }
+}
+
+/** Usuwa plik lub folder (trafia do kosza witryny SharePoint). */
+export async function usunPlik(id: string): Promise<void> {
+  const r = await driveFetch(`/items/${id}`, { method: "DELETE" });
+  if (!r.ok && r.status !== 204) throw await bladDrive(r);
 }
 
 /** Awaryjne czyszczenie stanu MSAL - do podpiecia pod przycisk, gdy logowanie sie zablokuje. */
@@ -723,7 +946,13 @@ export async function getSiteUserId(email: string): Promise<number | null> {
  * Ceny z cennika: Title (i Nazwa) -> " TECS Fee " i " Annual Lease". Kolumny maja spacje w nazwie
  * wyswietlanej (import z Excela), a ceny sa tekstem z przecinkiem - stad parsowanie.
  */
-export type CenaTecs = { tecs: number; lease: number };
+export type CenaTecs = {
+  tecs: number;
+  lease: number;
+  paidUp: number;   // " Paid-Up Fee " - takze cena AEC i ALH w produktach szansy
+  schemat: string;  // SchematRabatu -> progi w ProgiRabatowe
+  tytul: string;    // Title - nazwa produktu w wyszukiwarce i w ProductID
+};
 let cenyTecsCache: Promise<Map<string, CenaTecs>> | null = null;
 
 export function liczbaZCennika(v: unknown): number {
@@ -739,12 +968,14 @@ export function getCenyTecs(): Promise<Map<string, CenaTecs>> {
     const kol = szukaj("tecs fee");
     if (!kol) throw new Error("brak kolumny „TECS Fee” w Cennik_CRM");
     const kolLease = szukaj("annual lease");
+    const kolPU = szukaj("paid-up fee");
+    const kolSchemat = kolumny.find((c) => c.name === "SchematRabatu") ?? szukaj("schematrabatu");
 
     const token = await getToken();
     const siteId = await getSiteId(token);
     const listId = await getListId(siteId, "Cennik_CRM", token);
     const mapa = new Map<string, CenaTecs>();
-    const pola = ["Title", "Nazwa", kol.name, kolLease?.name].filter(Boolean).join(",");
+    const pola = ["Title", "Nazwa", kol.name, kolLease?.name, kolPU?.name, kolSchemat?.name].filter(Boolean).join(",");
     let url: string | null =
       `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields(select=${pola})&$top=999`;
     let strony = 0;
@@ -757,6 +988,9 @@ export function getCenyTecs(): Promise<Map<string, CenaTecs>> {
         const cena: CenaTecs = {
           tecs: liczbaZCennika(f[kol.name]),
           lease: kolLease ? liczbaZCennika(f[kolLease.name]) : 0,
+          paidUp: kolPU ? liczbaZCennika(f[kolPU.name]) : 0,
+          schemat: kolSchemat ? String(f[kolSchemat.name] ?? "").trim() : "",
+          tytul: String(f.Title ?? "").trim(),
         };
         [f.Title, f.Nazwa].forEach((k) => {
           const klucz = String(k ?? "").trim();
@@ -770,6 +1004,27 @@ export function getCenyTecs(): Promise<Map<string, CenaTecs>> {
   })();
   cenyTecsCache.catch(() => { cenyTecsCache = null; });
   return cenyTecsCache;
+}
+
+/** Progi rabatowe (ProgiRabatowe): schemat (Title), od ilu licencji (Od), rabat w %. */
+export type ProgRabatu = { schemat: string; od: number; rabat: number };
+let progiCache: Promise<ProgRabatu[]> | null = null;
+
+export function getProgiRabatowe(): Promise<ProgRabatu[]> {
+  if (progiCache) return progiCache;
+  progiCache = (async () => {
+    const [od, rabat, items] = await Promise.all([
+      nazwaWewnetrzna("ProgiRabatowe", "Od"),
+      nazwaWewnetrzna("ProgiRabatowe", "Rabat"),
+      getListItems(999, "ProgiRabatowe"),
+    ]);
+    return items.map((i) => {
+      const f = i.fields as Record<string, unknown>;
+      return { schemat: String(f.Title ?? "").trim(), od: liczbaZCennika(f[od]), rabat: liczbaZCennika(f[rabat]) };
+    });
+  })();
+  progiCache.catch(() => { progiCache = null; });
+  return progiCache;
 }
 
 /** Cennik licencji (Cennik_CRM) - do kodow demo. Title to nazwa w wyszukiwarce, Nazwa idzie do zapisu. */

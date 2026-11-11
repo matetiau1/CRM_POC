@@ -5,14 +5,14 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs,
+  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
 } from "./graphService";
-import type { ListItem, PozycjaCennika, CenaTecs } from "./graphService";
+import type { ListItem, PozycjaCennika, CenaTecs, ProgRabatu } from "./graphService";
 import {
   toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, ticketIdZTematu, Ticket, Company,
   toContact, Contact, toCompanyFull, CompanyFull, toNota, Nota, toTecs, toSzansa, Szansa,
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
-  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow, toProduktTecs, ProduktTecs,
+  ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow, toProduktTecs, ProduktTecs, toProduktSzansy, ProduktSzansy,
 } from "./crm";
 import { SUPPORT_MAILBOX, POWERAPPS_URL } from "./authConfig";
 import { pobierzPoNip, pelnaNazwa, nipPoprawny } from "./rejestr";
@@ -30,11 +30,18 @@ Office.onReady((info) => {
   document.getElementById("nav-companies")!.onclick = () => void pokazFirmy();
   document.getElementById("nav-contacts")!.onclick = () => void pokazKontakty();
   document.getElementById("nav-crm")!.onclick = () => window.open(POWERAPPS_URL, "_blank");
-  document.getElementById("nav-szanse")!.onclick = () => void pokazSzanse();
+  // wejscie w Szanse zawsze od szans sprzedazy - TECS to przelacznik w srodku
+  document.getElementById("nav-szanse")!.onclick = () => {
+    szanseRodzaj = "Sprzedaż";
+    void pokazSzanse();
+  };
 
   Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged, () => {
     if (widok === "zgloszenia") void pokazZgloszenia();
-    if (widok === "szanse") void pokazSzanse();
+    if (widok === "szanse") {
+      szanseRodzaj = "Sprzedaż";
+      void pokazSzanse();
+    }
   });
 
   void start();
@@ -72,14 +79,21 @@ let frazaKontaktow = "";
 
 type Zakladka =
   | "Kontakty" | "Supporty" | "Notatki" | "TECS"
-  | "Szanse" | "Posiadane" | "Szkolenia" | "Uwagi";
+  | "Szanse" | "Posiadane" | "Szkolenia" | "Uwagi" | "Dokumenty";
 
 let zakladkaFirmy: Zakladka = "Kontakty";
 let tecsTryb: "Bieżące" | "Archiwalne" | "Demo" = "Bieżące";
 let otworzKodyDemo = false; // kafelek "Nowe kody demo" -> TECS/Demo z otwartym formularzem
+let otworzNowaSzanse = false; // "Nowy Opps Soft" z paska firmy -> Szanse z otwartym formularzem
 let otworzNowyTecs = false; // "Zapisz i utworz TECS" przy wygranej -> TECS/Biezace z otwartym formularzem
 let nowyTecsZSzansy: Szansa | null = null; // wygrana szansa - jej produkty podpowiadamy do TECS-u
 let szanseZamkniete = false;
+// jak OnVisible w Power Apps: po wejsciu w firme bez biezacych TECS-ow / aktywnych szans
+// zakladka sama pokazuje archiwalne / zamkniete - tylko przy pierwszym wyswietleniu
+let szczegolyFirmy = false; // karta firmy: adres, NIP, status, NDA, godziny zwiniete pod "Pokaż szczegóły"
+let autoTecs = false;
+let autoSzanse = false;
+let szanseRodzaj: "Sprzedaż" | "TECS" = "Sprzedaż"; // widok maila handlowca: szanse sprzedazy albo TECS
 let posTryb: "Aktywne TECS" | "Wygasłe" | "Bez TECS" = "Aktywne TECS";
 
 /** Pelne dane firmy - pobierane raz przy wejsciu w widok. */
@@ -174,6 +188,9 @@ const IKONY = {
   mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
   firma: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/>',
   osoba: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  hasz: '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+  ludzie: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  tarczaOk: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
   sluchawki: '<path d="M3 11h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5Zm0 0a9 9 0 1 1 18 0m0 0v5a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3Z"/><path d="M21 16v2a4 4 0 0 1-4 4h-5"/>',
   zegar: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   kalendarz: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>',
@@ -203,6 +220,12 @@ const IKONY = {
   kosz: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2"/>',
   uscisk: '<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>',
   wideo: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
+  spinacz: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  wyslij: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  nowaSzansa: '<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/>',
+  kalkulator: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
+  blyskawica: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  dodajOsobe: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/>',
   telefon: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
 };
 
@@ -370,6 +393,13 @@ function segment(box: HTMLElement, opcje: string[], aktywna: string, wybor: (v: 
   });
 
   box.appendChild(pasek);
+}
+
+/** Podswietla opcje w pierwszym przelaczniku w box - gdy tryb zmienil sie po narysowaniu. */
+function zaznaczSegment(box: HTMLElement, wartosc: string) {
+  box.querySelector(".crm-segment")?.querySelectorAll(".crm-segment-btn").forEach((b) =>
+    b.classList.toggle("crm-segment-akt", b.textContent === wartosc)
+  );
 }
 
 /** Pasek postepu do konca terminu - pelny rok = 100%. */
@@ -581,6 +611,41 @@ function szczegoly(t: Ticket, poZapisie: () => void): HTMLElement {
   const ostrzezenie = el("div", "crm-ostrzezenie");
   ostrzezenie.style.display = "none";
   box.appendChild(ostrzezenie);
+
+  // usuwanie - tylko wlasciciel zgloszenia (obslugujacy, MailCreator), z potwierdzeniem
+  const usun = przyciskIk("crm-btn crm-btn-cichy crm-zgl-usun", "kosz", "Usuń");
+  usun.title = "Usuń zgłoszenie";
+  usun.hidden = true;
+  pasek.insertBefore(usun, komunikat);
+  if (t.opiekunMail) {
+    void getMojMail().then((m) => (usun.hidden = m.trim().toLowerCase() !== t.opiekunMail), () => undefined);
+  }
+  usun.onclick = () => {
+    ostrzezenie.innerHTML = "";
+    ostrzezenie.appendChild(el("div", undefined,
+      `Usunąć zgłoszenie MESco-ID-${t.ticketId}${t.osoba ? ` (${t.osoba})` : ""}? Tej operacji nie da się cofnąć z dodatku.`));
+    const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń zgłoszenie") as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    const rzad = el("div", "crm-akcje");
+    rzad.append(tak, nie);
+    ostrzezenie.appendChild(rzad);
+    ostrzezenie.style.display = "block";
+    nie.onclick = () => { ostrzezenie.style.display = "none"; };
+    tak.onclick = async () => {
+      tak.disabled = nie.disabled = usun.disabled = zapisz.disabled = true;
+      try {
+        await deleteListItem("Support", t.id);
+        const karta = box.closest(".crm-card");
+        if (karta) karta.remove();
+        else box.remove();
+      } catch (e: any) {
+        ostrzezenie.style.display = "none";
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+        usun.disabled = zapisz.disabled = false;
+      }
+    };
+  };
 
   const wykonajZapis = async () => {
     const g = parseGodziny(czas.value);
@@ -907,8 +972,10 @@ async function formularzKontaktu(
   firma: CompanyFull,
   start: { imie: string; nazwisko: string; email: string },
   poZapisie: (nowy: ListItem) => void,
-  anuluj?: () => void
+  anuluj?: () => void,
+  edycja: Contact | null = null
 ) {
+  if (edycja) box.appendChild(el("div", "crm-nowe-info", `Edycja: ${edycja.imieNazwisko || "kontakt"}`));
   const pole = (etykieta: string, wartosc = "", typ = "text") => {
     box.appendChild(el("label", "crm-label", etykieta));
     const i = document.createElement("input");
@@ -922,8 +989,8 @@ async function formularzKontaktu(
   const imie = pole("Imię", start.imie);
   const nazwisko = pole("Nazwisko", start.nazwisko);
   const email = pole("E-mail", start.email, "email");
-  const telefon = pole("Telefon", "", "tel");
-  const stanowisko = pole("Stanowisko");
+  const telefon = pole("Telefon", edycja?.telefon ?? "", "tel");
+  const stanowisko = pole("Stanowisko", edycja?.stanowisko ?? "");
 
   // --- plec (wymagana) i rola - opcje z definicji kolumn ---
   let plcie: string[] = [];
@@ -959,14 +1026,18 @@ async function formularzKontaktu(
     const p = plecZImienia(imie.value);
     if (!plecRecznie && plcie.includes(p)) zaznaczPlec(p);
   };
-  podpowiedzPlci();
+  if (edycja?.plec) {
+    plecRecznie = true;
+    zaznaczPlec(edycja.plec);
+  } else podpowiedzPlci();
 
-  const wybraneRole = new Set<string>();
+  const wybraneRole = new Set<string>(edycja?.role ?? []);
   if (role.length) {
     box.appendChild(el("label", "crm-label", "Rola (MEDDIC)"));
     const rolaBox = el("div", "crm-chipy");
     role.forEach((o) => {
       const b = el("button", "crm-chip-wybor", o) as HTMLButtonElement;
+      b.classList.toggle("crm-chip-akt", wybraneRole.has(o));
       b.onclick = () => {
         if (wybraneRole.has(o)) wybraneRole.delete(o);
         else wybraneRole.add(o);
@@ -992,17 +1063,23 @@ async function formularzKontaktu(
   };
   const stala = przelacznik("Stała wysyłka Messengera");
   const tymczasowa = przelacznik("Tymczasowa wysyłka Messengera");
+  stala.checked = edycja?.stala ?? false;
+  tymczasowa.checked = edycja?.tymczasowa ?? false;
+  // Status = true znaczy "juz nie pracuje" - przy nowym kontakcie bez sensu
+  const niePracuje = edycja ? przelacznik("Nie pracuje już w firmie") : null;
+  if (niePracuje) niePracuje.checked = !edycja!.aktywny;
 
   box.appendChild(el("label", "crm-label", "Uwagi"));
   const uwagi = document.createElement("textarea");
   uwagi.className = "crm-textarea";
   uwagi.rows = 2;
+  uwagi.value = edycja?.uwagi ?? "";
   box.appendChild(uwagi);
 
   const brakujace = el("div", "crm-podpowiedz");
   box.appendChild(brakujace);
 
-  const zapisz = el("button", "crm-btn", "Zapisz kontakt") as HTMLButtonElement;
+  const zapisz = el("button", "crm-btn", edycja ? "Zapisz zmiany" : "Zapisz kontakt") as HTMLButtonElement;
   const komunikat = el("span", "crm-komunikat");
   const rzad = el("div", "crm-akcje");
   rzad.appendChild(zapisz);
@@ -1017,8 +1094,9 @@ async function formularzKontaktu(
   function sprawdz(): boolean {
     const brak: string[] = [];
     if (!imie.value.trim() && !nazwisko.value.trim()) brak.push("imię lub nazwisko");
-    if (plcie.length && !plec) brak.push("płeć");
-    if (role.length && !wybraneRole.size) brak.push("rola");
+    // stare kontakty bywaja bez plci i roli - edycja ich nie wymusza
+    if (plcie.length && !plec && !edycja) brak.push("płeć");
+    if (role.length && !wybraneRole.size && !edycja) brak.push("rola");
     const ok = brak.length === 0;
     zapisz.disabled = !ok;
     brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
@@ -1039,8 +1117,31 @@ async function formularzKontaktu(
 
     try {
       // ten sam adres w bazie = duplikat, a dopasowanie nadawcy bierze pierwszy
-      if (mail && (await getContactByEmail(mail))) {
+      const zmienionyMail = !edycja || mail !== edycja.email.trim().toLowerCase();
+      if (mail && zmienionyMail && (await getContactByEmail(mail))) {
         throw new Error(`Kontakt z adresem ${mail} już jest w bazie.`);
+      }
+
+      if (edycja) {
+        const zmiany: Record<string, unknown> = {
+          Imi_x0119_: imie.value.trim(),
+          Nazwisko: nazwisko.value.trim(),
+          Email: mail,
+          Phone: telefon.value.trim(),
+          Stanowisko: stanowisko.value.trim(),
+          UWAGI: uwagi.value.trim(),
+          Sta_x0142_awysy_x0142_ka: stala.checked,
+          Tymczasowawysy_x0142_ka: tymczasowa.checked,
+          Status: niePracuje!.checked,
+          "RolawMEDDIC@odata.type": "Collection(Edm.String)",
+          RolawMEDDIC: [...wybraneRole],
+        };
+        if (plec) zmiany["P_x0142_e_x0107_"] = plec;
+        const pola = await updateTicketFields(edycja.id, zmiany, edycja.etag || undefined, "Contacts");
+        komunikat.textContent = "Zmiany zapisane";
+        komunikat.className = "crm-komunikat crm-ok";
+        poZapisie({ id: edycja.id, fields: { ...pola, id: edycja.id } });
+        return;
       }
 
       const pola: Record<string, unknown> = {
@@ -1438,9 +1539,18 @@ async function pokazSzanse() {
     };
     root().insertBefore(firma, s);
 
+    // szanse sprzedazy albo TECS tej firmy - przelacznik nad lista
+    const przel = el("div");
+    root().insertBefore(przel, s);
+    segment(przel, ["Sprzedaż", "TECS"], szanseRodzaj, (v) => {
+      szanseRodzaj = v as typeof szanseRodzaj;
+      void pokazSzanse();
+    });
+
     const box = el("div");
     root().appendChild(box);
-    await zakladkaSzanse(box, s, c, () => void pokazSzanse());
+    if (szanseRodzaj === "TECS") await zakladkaTecs(box, s, c, false);
+    else await zakladkaSzanse(box, s, c, () => void pokazSzanse(), true);
   } catch (e: any) {
     console.error(e);
     s.textContent = `Błąd: ${e?.message ?? e}`;
@@ -2025,43 +2135,189 @@ async function formularzNowejFirmy(miejsce: HTMLElement, anuluj: () => void) {
 
 // ---------------------------------------------------------------- kontakty firmy
 
-function kartaKontaktu(k: Contact, c: Company): HTMLElement {
-  const card = el("div", "crm-kontakt-card");
+// kosz przy kontakcie - tylko dla administratora CRM, jak w Power Apps
+const ADMIN_KONTAKTOW = "mnowakowski@mesco.com.pl";
 
-  const top = el("div", "crm-firma-top");
-  top.appendChild(el("span", "crm-firma-nazwa", k.imieNazwisko || "(bez nazwiska)"));
-  if (!k.aktywny) top.appendChild(el("span", "crm-nieaktywny", "nie pracuje"));
+/** Dane firmy do formularza kontaktu - pelne, gdy firma jest otwarta, inaczej z listy. */
+function firmaDoFormularza(c: Company): CompanyFull {
+  return firmaPelna && firmaPelna.guid === c.guid ? firmaPelna : {
+    id: "", guid: c.guid, skrocona: c.nazwa, pelna: "", nip: "", ulica: c.ulica,
+    miasto: c.miasto, kod: c.kod, status: "", dataNDA: "", opiekun: c.opiekun,
+    tecsH: 0, supportDay: 0, preSalesH: 0, uwagi: "", domena: "",
+  };
+}
+
+/** Mala ikona-przycisk karty kontaktu (galeria Contacts z Power Apps). */
+function ikonaAkcji(ik: keyof typeof IKONY, tytul: string, klasa = ""): HTMLButtonElement {
+  const b = el("button", `crm-kk-akcja ${klasa}`.trim()) as HTMLButtonElement;
+  b.title = tytul;
+  b.setAttribute("aria-label", tytul);
+  b.appendChild(ikona(ik));
+  return b;
+}
+
+/** Wiersz "ikona  wartosc  [kopiuj]" - mail albo telefon. */
+function liniaKontaktu(ik: keyof typeof IKONY, wartosc: string, brak: string, kopiujTytul: string): {
+  linia: HTMLElement;
+  ikonaEl: HTMLElement;
+} {
+  const linia = el("div", "crm-kk-linia");
+  const ikonaEl = el("span", "crm-kk-ik");
+  ikonaEl.appendChild(ikona(ik));
+  linia.append(ikonaEl, el("span", wartosc ? "crm-kk-wartosc" : "crm-kk-wartosc crm-kk-brak", wartosc || brak));
+  if (wartosc) {
+    const kop = ikonaAkcji("kopiuj", kopiujTytul, "crm-kk-kopiuj");
+    kop.onclick = async (e) => {
+      e.stopPropagation();
+      const ok = await kopiuj(wartosc);
+      blysk(linia, ok ? "skopiowano" : "nie udało się");
+    };
+    linia.appendChild(kop);
+  }
+  return { linia, ikonaEl };
+}
+
+function kartaKontaktu(k: Contact, c: Company, poUsunieciu?: () => void, linkFirmy = false): HTMLElement {
+  const card = el("div", k.aktywny ? "crm-kontakt-card crm-kk" : "crm-kontakt-card crm-kk crm-kk-byly");
+
+  // --- naglowek: inicjaly, imie i nazwisko, stanowisko, edycja ---
+  const top = el("div", "crm-kk-top");
+  const inicjaly = ((k.imie || k.imieNazwisko).charAt(0) + (k.nazwisko || k.imieNazwisko.split(" ")[1] || "").charAt(0))
+    .toUpperCase();
+  top.appendChild(el("span", "crm-kk-avatar", inicjaly || "?"));
+  const kto = el("div", "crm-kk-kto");
+  kto.appendChild(el("div", "crm-kk-nazwa", k.imieNazwisko || "(bez nazwiska)"));
+  kto.appendChild(el("div", k.stanowisko ? "crm-kk-stanowisko" : "crm-kk-stanowisko crm-kk-brak", k.stanowisko || "Brak stanowiska"));
+  top.appendChild(kto);
+  const edytuj = ikonaAkcji("pioro", "Edytuj kontakt");
+  top.appendChild(edytuj);
   card.appendChild(top);
 
-  if (k.stanowisko) card.appendChild(el("div", "crm-adres", k.stanowisko));
-
-  if (k.email) {
-    const mail = el("div", "crm-kontakt-linia");
-    mail.append(ikona("mail"), el("span", undefined, k.email));
-    zrobKopiowalny(mail, k.email, "skopiowano adres");
-    card.appendChild(mail);
+  // wyszukiwarka kontaktow - klik w firme prowadzi do pelnego widoku firmy
+  if (linkFirmy && k.companyGuid) {
+    const doFirmy = el("button", "crm-kontakt-firma", `↗ ${k.firmaId || "firma"}`) as HTMLButtonElement;
+    doFirmy.title = "Otwórz firmę";
+    doFirmy.onclick = () => {
+      zakladkaFirmy = "Kontakty";
+      void pokazFirma(c);
+    };
+    card.appendChild(doFirmy);
   }
 
+  // --- pastylki: rola, nie pracuje, MESsenger ---
+  const pigulki = el("div", "crm-kk-pigulki");
+  if (k.role.length) pigulki.appendChild(pastylka(k.role.join(", "), "#5B6CDB", "#EEF0FC"));
+  if (!k.aktywny) pigulki.appendChild(pastylka("Nie pracuje", "#DC2626", "#FEE2E2"));
+  if (k.stala || k.tymczasowa) {
+    const m = pastylka(`MESsenger${k.ileMessengerow > 0 ? " x" + k.ileMessengerow : ""}`, "#16A34A", "#E6F6EE");
+    m.title = k.stala ? "Stała wysyłka" : "Tymczasowa wysyłka";
+    pigulki.appendChild(m);
+  }
+  if (pigulki.childElementCount) card.appendChild(pigulki);
+
+  card.appendChild(el("div", "crm-kk-kreska"));
+
+  // --- mail i telefon, kazdy z kopiowaniem; ikona telefonu dzwoni ---
+  card.appendChild(liniaKontaktu("mail", k.email, "brak e-maila", "Kopiuj adres").linia);
+  const tel = liniaKontaktu("telefon", k.telefon, "brak telefonu", "Kopiuj numer");
   if (k.telefon) {
-    const tel = document.createElement("a");
-    tel.className = "crm-kontakt-linia crm-tel";
-    tel.href = `tel:${k.telefon.replace(/[^\d+]/g, "")}`;
-    tel.append(ikona("telefon"), el("span", undefined, k.telefon));
-    tel.title = "Kliknij, aby zadzwonić";
-    card.appendChild(tel);
+    const zadzwon = document.createElement("a");
+    zadzwon.className = "crm-kk-ik crm-kk-dzwon";
+    zadzwon.href = `tel:${k.telefon.replace(/[^\d+]/g, "")}`;
+    zadzwon.title = "Zadzwoń";
+    zadzwon.appendChild(ikona("telefon"));
+    tel.ikonaEl.replaceWith(zadzwon);
   }
+  card.appendChild(tel.linia);
 
-    const btn = el("button", "crm-btn crm-btn-cichy", "+ zgłoszenie") as HTMLButtonElement;
-  const btnNota = el("button", "crm-btn crm-btn-cichy", "+ notatka") as HTMLButtonElement;
+  // --- akcje ---
+  const akcje = el("div", "crm-kk-akcje");
+  const nowyMail = ikonaAkcji("mail", k.email ? "Napisz e-mail" : "Brak adresu e-mail", "crm-kk-niebieski");
+  nowyMail.disabled = !k.email;
+  nowyMail.onclick = () =>
+    Office.context.mailbox.displayNewMessageForm({
+      toRecipients: [k.email],
+    });
+  const zgloszenie = ikonaAkcji("klucz", "Nowe zgłoszenie Support", "crm-kk-pomaranczowy");
+  const szybka = ikonaAkcji("blyskawica", "Szybka akcja — notatka", "crm-kk-zolty");
+  const doOutlooka = ikonaAkcji("dodajOsobe", "Dodaj do kontaktów Outlook", "crm-kk-niebieski");
+  const usun = ikonaAkcji("kosz", "Usuń kontakt", "crm-kk-czerwony crm-kk-prawo");
+  usun.hidden = true;
+  akcje.append(nowyMail, zgloszenie, szybka, doOutlooka, usun);
+  card.appendChild(akcje);
   const komunikat = el("span", "crm-komunikat");
-  const rzad = el("div", "crm-akcje");
-  rzad.appendChild(btn);
-  rzad.appendChild(btnNota);
-  rzad.appendChild(komunikat);
-  card.appendChild(rzad);
+  card.appendChild(komunikat);
 
-  btn.onclick = () => void formularzReczny(card, btn, komunikat, k, c);
-  btnNota.onclick = () => void formularzNotatki(card, btnNota, komunikat, k, c);
+  zgloszenie.onclick = () => void formularzReczny(card, zgloszenie, komunikat, k, c);
+  szybka.onclick = () => void formularzNotatki(card, szybka, komunikat, k, c);
+
+  doOutlooka.onclick = async () => {
+    doOutlooka.disabled = true;
+    komunikat.className = "crm-komunikat";
+    komunikat.textContent = "Dodawanie do kontaktów Outlook...";
+    try {
+      const nowy = await dodajDoKontaktowOutlook({
+        imie: k.imie || rozbijNazwe(k.imieNazwisko).imie,
+        nazwisko: k.nazwisko || rozbijNazwe(k.imieNazwisko).nazwisko,
+        email: k.email,
+        telefon: k.telefon,
+        firma: k.firmaId || c.nazwa,
+        stanowisko: k.stanowisko,
+      });
+      komunikat.textContent = nowy
+        ? `Dodano ${k.imieNazwisko} do kontaktów Outlook`
+        : `${k.imieNazwisko} jest już w kontaktach Outlook`;
+      komunikat.className = nowy ? "crm-komunikat crm-ok" : "crm-komunikat";
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+    } finally {
+      doOutlooka.disabled = false;
+    }
+  };
+
+  // --- edycja: formularz w miejscu karty ---
+  edytuj.onclick = () => {
+    const box = el("div", "crm-nowe");
+    card.replaceWith(box);
+    void formularzKontaktu(box, firmaDoFormularza(c), { imie: k.imie, nazwisko: k.nazwisko, email: k.email }, (nowy) => {
+      Object.assign(k, toContact(nowy));
+      kontaktCache.clear();
+      wyczyscCacheKontaktow();
+      box.replaceWith(kartaKontaktu(k, c, poUsunieciu, linkFirmy));
+    }, () => box.replaceWith(card), k);
+  };
+
+  // --- usuwanie: tylko administrator, z potwierdzeniem ---
+  void getMojMail().then((m) => (usun.hidden = m.trim().toLowerCase() !== ADMIN_KONTAKTOW), () => undefined);
+  usun.onclick = () => {
+    usun.disabled = true;
+    const pyt = el("div", "crm-kk-potwierdz");
+    pyt.appendChild(el("span", undefined, `Usunąć ${k.imieNazwisko || "kontakt"} z CRM?`));
+    const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    pyt.append(tak, nie);
+    card.appendChild(pyt);
+    nie.onclick = () => {
+      pyt.remove();
+      usun.disabled = false;
+    };
+    tak.onclick = async () => {
+      tak.disabled = nie.disabled = true;
+      try {
+        await deleteListItem("Contacts", k.id);
+        kontaktCache.clear();
+        wyczyscCacheKontaktow();
+        card.remove();
+        poUsunieciu?.();
+      } catch (e: any) {
+        pyt.remove();
+        usun.disabled = false;
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+      }
+    };
+  };
 
   return card;
 }
@@ -2354,42 +2610,72 @@ function naglowekFirmy(c: Company): HTMLElement {
   box.appendChild(powrot);
 
   const f = firmaPelna;
-  // dane firmy w karcie - ten sam styl co karty na liscie
-  const karta = el("div", "crm-firma-karta");
+  // karta firmy jak hdCard w Power Apps: nazwa i opiekun, adres i NIP, status, NDA, godziny
+  const karta = el("div", "crm-firma-karta crm-hd");
   box.appendChild(karta);
-  karta.appendChild(poleIk("crm-firma-tytul", "firma", f?.skrocona || c.nazwa));
-  if (f?.pelna && f.pelna !== f.skrocona) karta.appendChild(el("div", "crm-firma-pelna", f.pelna));
-  if (f?.ulica || f?.miasto) {
-    karta.appendChild(
-      poleIk("crm-firma-adres", "pinezka", [f.ulica, [f.kod, f.miasto].filter(Boolean).join(" ")].filter(Boolean).join(", "), "Adres")
-    );
+
+  const gora = el("div", "crm-hd-gora");
+  const bud = el("span", "crm-hd-bud");
+  bud.appendChild(ikona("firma"));
+  const kto = el("div", "crm-hd-kto");
+  const pelna = f?.pelna || f?.skrocona || c.nazwa;
+  const nazwaEl = el("div", "crm-hd-nazwa", pelna);
+  nazwaEl.title = pelna;
+  kto.appendChild(nazwaEl);
+  const opiekunNazwa = f?.opiekun || c.opiekun;
+  if (opiekunNazwa) {
+    const op = pastylka(`Opiekun: ${opiekunNazwa}`, "#5B6CDB", "#EEF0FC", "osoba");
+    op.classList.add("crm-hd-opiekun");
+    kto.appendChild(op);
   }
+  gora.append(bud, kto);
+  karta.appendChild(gora);
 
-  // --- pastylki ---
-  const pills = el("div", "crm-pills");
-
-  const statusy: Record<string, [string, string]> = {
-    Klient: ["#16A34A", "#E6F6EE"],
-    Prospekt: ["#D97706", "#FEF3E2"],
-    Prospect: ["#D97706", "#FEF3E2"],
-    GSS: ["#2F6FD6", "#E8F0FD"],
-    Nieaktywny: ["#6B7280", "#F3F4F6"],
+  // reszta karty zwinieta - zajmowala za duzo miejsca nad zakladkami
+  const szczegoly = el("div", "crm-hd-szczegoly");
+  const rozwin = el("button", "crm-hd-rozwin") as HTMLButtonElement;
+  const ustawRozwin = () => {
+    szczegoly.hidden = !szczegolyFirmy;
+    rozwin.textContent = szczegolyFirmy ? "▴ Ukryj szczegóły" : "▾ Pokaż szczegóły";
+    rozwin.setAttribute("aria-expanded", String(szczegolyFirmy));
   };
-  const st = f?.status || "";
-  const [sc, sb] = statusy[st] ?? ["#3860B2", "#EEF0FC"];
-  pills.appendChild(pastylka(st || "brak statusu", sc, sb, "etykieta"));
+  rozwin.onclick = () => {
+    szczegolyFirmy = !szczegolyFirmy;
+    ustawRozwin();
+  };
+  kto.appendChild(rozwin);
 
-  const dniNDA = dniDo(f?.dataNDA ?? "");
-  const ndaKolor: [string, string] =
-    !f?.dataNDA ? ["#6B7280", "#F3F4F6"]
-    : dniNDA !== null && dniNDA < 0 ? ["#DC2626", "#FEE2E2"]
-    : dniNDA !== null && dniNDA <= 30 ? ["#D97706", "#FEF3E2"]
-    : ["#16A34A", "#E6F6EE"];
-  pills.appendChild(
-    pastylka("NDA " + (f?.dataNDA ? "do " + dataPL(f.dataNDA) : "brak"), ndaKolor[0], ndaKolor[1], "tarcza")
-  );
+  // --- adres (nawigacja) i NIP (kopiowanie) ---
+  const chipy = el("div", "crm-hd-chipy");
+  if (f?.ulica || f?.miasto) {
+    const u = (f.ulica || "").trim().replace(/^ul\.?\s*/i, "");
+    const tekst = [u ? `ul. ${u}` : "", [f.kod, f.miasto].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    const adres = przyciskIk("crm-hd-chip crm-hd-adres", "pinezka", tekst);
+    adres.title = "Nawiguj w Google Maps";
+    adres.onclick = () => {
+      const cel = encodeURIComponent(`${(f.ulica || "").trim()}, ${f.kod} ${(f.miasto || "").trim()}, Polska`);
+      window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${cel}`, "_blank");
+    };
+    chipy.appendChild(adres);
+  }
+  if (f?.nip) {
+    const czysty = f.nip.toUpperCase().replace(/[\s-]/g, "").replace(/^PL/, "");
+    const widoczny =
+      czysty.length === 10
+        ? `${czysty.slice(0, 3)}-${czysty.slice(3, 5)}-${czysty.slice(5, 7)}-${czysty.slice(7)}`
+        : czysty;
+    const nipBtn = przyciskIk("crm-hd-chip crm-hd-nip", "hasz", `NIP ${widoczny}`);
+    nipBtn.appendChild(ikona("kopiuj"));
+    nipBtn.title = "Kopiuj NIP";
+    nipBtn.onclick = async () => {
+      const ok = await kopiuj(czysty);
+      blysk(nipBtn, ok ? `skopiowano NIP: ${czysty}` : "nie udało się");
+    };
+    chipy.appendChild(nipBtn);
+  }
+  if (chipy.childElementCount) szczegoly.appendChild(chipy);
 
-  if (f?.opiekun) pills.appendChild(pastylka(f.opiekun, "#3860B2", "#EEF0FC", "opiekun"));
+  // ostrzezenie o TECS zostaje na wierzchu - ma byc widoczne bez rozwijania
   if (tecsAlert) {
     const p = pastylka(
       `TECS kończy się za ${tecsAlert.dni} dni` +
@@ -2405,89 +2691,123 @@ function naglowekFirmy(c: Company): HTMLElement {
       posTryb = "Aktywne TECS";
       void pokazFirma(c);
     };
-    pills.appendChild(p);
+    p.classList.add("crm-hd-alert");
+    karta.appendChild(p);
   }
-  karta.appendChild(pills);
+  karta.appendChild(szczegoly);
+  ustawRozwin();
 
-  // --- przyciski akcji ---
-  const akcje = el("div", "crm-firma-akcje");
+  // --- kafelki: status i NDA po lewej, wykorzystane godziny po prawej ---
+  const kafle = el("div", "crm-hd-kafle");
+  const kafelek = (ik: keyof typeof IKONY, kolIk: string, tloIk: string, etykieta: string, wartosc: string, kolor: string) => {
+    const k = el("div", "crm-hd-kafel");
+    const i = el("span", "crm-hd-kafel-ik");
+    i.style.color = kolIk;
+    i.style.background = tloIk;
+    i.appendChild(ikona(ik));
+    const t = el("div", "crm-hd-kafel-txt");
+    const v = el("div", "crm-hd-kafel-val", `● ${wartosc}`);
+    v.style.color = kolor;
+    t.append(el("div", "crm-hd-kafel-lbl", etykieta), v);
+    k.append(i, t);
+    return k;
+  };
+  const kolStatusu: Record<string, string> = {
+    Klient: "#16A34A", Prospekt: "#D97706", Prospect: "#D97706", GSS: "#2F6FD6", Nieaktywny: "#9CA3AF",
+  };
+  const st = f?.status || "";
+  const dniNDA = dniDo(f?.dataNDA ?? "");
+  const kolNDA = !f?.dataNDA ? "#9CA3AF" : dniNDA !== null && dniNDA < 0 ? "#DC2626"
+    : dniNDA !== null && dniNDA <= 30 ? "#D97706" : "#16A34A";
+  const lewa = el("div", "crm-hd-lewa");
+  lewa.append(
+    kafelek("ludzie", "#7C3AED", "#F1EAFE", "Status", st || "brak", kolStatusu[st] ?? "#5B6CDB"),
+    kafelek("tarczaOk", "#16A34A", "#E6F6EE", "NDA do", f?.dataNDA ? dataPL(f.dataNDA) : "brak", kolNDA)
+  );
 
-  if (f?.ulica || f?.miasto) {
-    const mapa = przyciskIk("crm-akcja", "pinezka", "Nawiguj");
-    mapa.title = `${f.ulica}, ${f.kod} ${f.miasto}`;
-    mapa.onclick = () => {
-      const adres = encodeURIComponent(`${f.ulica}, ${f.kod} ${f.miasto}, Polska`);
-      window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${adres}`, "_blank");
-    };
-    akcje.appendChild(mapa);
-  }
-
-  if (f?.nip) {
-    const czysty = f.nip.toUpperCase().replace(/[\s-]/g, "").replace(/^PL/, "");
-    const widoczny =
-      czysty.length === 10
-        ? `${czysty.slice(0, 3)}-${czysty.slice(3, 5)}-${czysty.slice(5, 7)}-${czysty.slice(7)}`
-        : czysty;
-    const nipBtn = przyciskIk("crm-akcja", "kopiuj", widoczny);
-    nipBtn.title = "Kopiuj NIP";
-    nipBtn.onclick = async () => {
-      const ok = await kopiuj(czysty);
-      blysk(nipBtn, ok ? "skopiowano" : "nie udało się");
-    };
-    akcje.appendChild(nipBtn);
-  }
-
-  const dok = przyciskIk("crm-akcja", "folder", "Dokumenty");
-  dok.onclick = () =>
-    window.open(
-      "https://mescocompl.sharepoint.com/sites/CRMSystemPOC/Shared%20Documents/DokumentyKlienci/" +
-        encodeURIComponent(f?.skrocona || c.nazwa),
-      "_blank"
-    );
-  akcje.appendChild(dok);
-  karta.appendChild(akcje);
-
-  // --- liczniki godzin ---
-  const liczniki = el("div", "crm-liczniki");
+  const godz = el("div", "crm-hd-godz");
+  godz.appendChild(poleIk("crm-hd-godz-lbl", "zegar", "Wykorzystane godziny"));
   ([
-    ["TECS", f?.tecsH ?? 0, "#2F6FD6", "tarcza"],
-    ["Support Day", f?.supportDay ?? 0, "#D97706", "klucz"],
-    ["PreSales", f?.preSalesH ?? 0, "#3860B2", "wykres"],
-  ] as [string, number, string, keyof typeof IKONY][]).forEach(([lbl, val, kol, ik]) => {
-    const kafel = el("div", "crm-licznik");
-    kafel.appendChild(poleIk("crm-licznik-lbl", ik, lbl));
-    const v = el("div", "crm-licznik-val", godziny(val));
-    v.style.color = val === 0 ? "#9CA3AF" : kol;
-    kafel.appendChild(v);
-    liczniki.appendChild(kafel);
+    ["TECS", f?.tecsH ?? 0, "#2F6FD6"],
+    ["Support Day", f?.supportDay ?? 0, "#D97706"],
+    ["PreSales", f?.preSalesH ?? 0, "#5B6CDB"],
+  ] as [string, number, string][]).forEach(([lbl, val, kol]) => {
+    const r = el("div", "crm-hd-godz-rzad");
+    const kolor = val === 0 ? "#9CA3AF" : kol;
+    const kropka = el("span", "crm-hd-kropka", "●");
+    kropka.style.color = kolor;
+    const v = el("span", "crm-hd-godz-val", godziny(val));
+    v.style.color = kolor;
+    r.append(kropka, el("span", "crm-hd-godz-nazwa", lbl), v);
+    godz.appendChild(r);
   });
-  karta.appendChild(liczniki);
+  kafle.append(lewa, godz);
+  szczegoly.appendChild(kafle);
 
-  // --- zakladki (przewijane w poziomie) ---
+  // --- zakladki jak pasek w Power Apps: ikona + nazwa, akcje wypelnione na koncu ---
   const pasek = el("div", "crm-zakladki");
-    const nazwy: Zakladka[] = [
-    "Kontakty", "Supporty", "Posiadane", "Notatki", "TECS", "Szanse", "Szkolenia", "Uwagi",
+  const nazwy: [Zakladka, string, keyof typeof IKONY][] = [
+    ["Kontakty", "Kontakty", "osoba"],
+    ["Notatki", "Notatki", "dokument"],
+    ["Supporty", "Supporty", "sluchawki"],
+    ["Szkolenia", "Szkolenia", "czapka"],
+    ["Szanse", "Szanse", "cel"],
+    ["TECS", "TECS", "tarcza"],
+    ["Posiadane", "Klient posiada", "paczka"],
+    ["Uwagi", "Uwagi", "dymek"],
+    ["Dokumenty", "Dokumenty", "folder"],
   ];
-  nazwy.forEach((z) => {
-    const b = el("button", "crm-zakladka", z) as HTMLButtonElement;
+  // Szanse i TECS w jednej grupie - zawsze obok siebie, nawet gdy pasek sie zawija
+  const sprzedaz = el("div", "crm-zakladki-para");
+  nazwy.forEach(([z, etykieta, ik]) => {
+    const b = przyciskIk("crm-zakladka", ik, etykieta);
     if (z === zakladkaFirmy) b.classList.add("crm-zakladka-akt");
     b.onclick = () => {
       zakladkaFirmy = z;
       void pokazFirma(c);
     };
-    pasek.appendChild(b);
+    if (z === "Szanse" || z === "TECS") {
+      sprzedaz.appendChild(b);
+      if (z === "Szanse") pasek.appendChild(sprzedaz);
+    } else pasek.appendChild(b);
   });
-  // szeroki kafelek na cala siatke - kody demo laduja w TECS / Demo
-  const demo = el("button", "crm-zakladka crm-zakladka-szeroka") as HTMLButtonElement;
-  demo.append(ikona("licencja"), el("span", undefined, "Nowe kody demo"));
+
+
+  // przyciski akcji w osobnym rzedzie pod zakladkami - zakladki maja rowna siatke
+  const akcjePaska = el("div", "crm-zakladki-akcje");
+
+  // kody demo laduja w TECS / Demo z otwartym formularzem
+  const demo = przyciskIk("crm-zakladka", "licencja", "Kody demo");
   demo.onclick = () => {
     zakladkaFirmy = "TECS";
     tecsTryb = "Demo";
     otworzKodyDemo = true;
     void pokazFirma(c);
   };
-  pasek.appendChild(demo);
+  // akcje zalezne od zakladki: w TECS tylko TECS i kody demo, w Szansach tylko nowa szansa,
+  // a na zakladkach bez zwiazku ze sprzedaza zadnych - mniej balaganu
+  const bezAkcji = (["Supporty", "Szkolenia", "Uwagi", "Dokumenty"] as Zakladka[]).includes(zakladkaFirmy);
+  if (zakladkaFirmy !== "Szanse" && !bezAkcji) akcjePaska.appendChild(demo);
+
+  const nowaSzansa = przyciskIk("crm-zakladka crm-zakladka-glowna", "nowaSzansa", "Nowy Opps Soft");
+  nowaSzansa.onclick = () => {
+    zakladkaFirmy = "Szanse";
+    szanseZamkniete = false;
+    otworzNowaSzanse = true;
+    void pokazFirma(c);
+  };
+  if (zakladkaFirmy !== "TECS" && !bezAkcji) akcjePaska.appendChild(nowaSzansa);
+
+  const nowyTecs = przyciskIk("crm-zakladka crm-zakladka-glowna", "nowaSzansa", "Nowy Opps TECS");
+  nowyTecs.onclick = () => {
+    zakladkaFirmy = "TECS";
+    tecsTryb = "Bieżące";
+    otworzNowyTecs = true;
+    void pokazFirma(c);
+  };
+  if (zakladkaFirmy !== "Szanse" && !bezAkcji) akcjePaska.appendChild(nowyTecs);
   box.appendChild(pasek);
+  if (akcjePaska.childElementCount) box.appendChild(akcjePaska);
 
   return box;
 }
@@ -2502,6 +2822,9 @@ async function pokazFirma(c: Company) {
  if (!firmaPelna || firmaPelna.guid !== c.guid) {
     firmaPelna = null;
     tecsAlert = null;
+    if (!otworzNowyTecs && !otworzKodyDemo) tecsTryb = "Bieżące";
+    if (!otworzNowaSzanse) szanseZamkniete = false;
+    autoTecs = autoSzanse = true;
     try {
       const item = await getCompanyByGuid(c.guid);
       if (item) firmaPelna = toCompanyFull(item);
@@ -2548,6 +2871,7 @@ async function pokazFirma(c: Company) {
       case "Posiadane": await zakladkaPosiadane(tresc, s, c); break;
       case "Szkolenia": await zakladkaSzkolenia(tresc, s, c); break;
       case "Uwagi":     zakladkaUwagi(tresc, s); break;
+      case "Dokumenty": await zakladkaDokumenty(tresc, s, c); break;
     }
   } catch (e: any) {
     console.error(e);
@@ -2560,9 +2884,13 @@ async function pokazFirma(c: Company) {
 
 async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
   const items = await getContactsByCompany(c.guid);
+  // po nazwisku, jak galeria w Power Apps
   const wszyscy = items
     .map(toContact)
-    .sort((a, b) => a.imieNazwisko.localeCompare(b.imieNazwisko, "pl"));
+    .sort((a, b) =>
+      (a.nazwisko || a.imieNazwisko).localeCompare(b.nazwisko || b.imieNazwisko, "pl") ||
+      a.imie.localeCompare(b.imie, "pl")
+    );
 
   // --- nowy kontakt w tej firmie ---
   const dodaj = el("button", "crm-btn crm-btn-cichy", "+ kontakt") as HTMLButtonElement;
@@ -2577,11 +2905,7 @@ async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
     dodaj.disabled = true;
     nowyBox.innerHTML = "";
     nowyBox.style.display = "block";
-    const f: CompanyFull = firmaPelna ?? {
-      id: "", guid: c.guid, skrocona: c.nazwa, pelna: "", nip: "", ulica: c.ulica,
-      miasto: c.miasto, kod: c.kod, status: "", dataNDA: "", opiekun: c.opiekun,
-      tecsH: 0, supportDay: 0, preSalesH: 0, uwagi: "", domena: "",
-    };
+    const f = firmaDoFormularza(c);
     // dane nadawcy otwartego maila - chyba ze to ktos z MESco
     const od = (Office.context.mailbox.item as Office.MessageRead | undefined)?.from;
     const mail = (od?.emailAddress ?? "").toLowerCase();
@@ -2649,7 +2973,10 @@ async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
       pusto(lista, q ? `Nic nie pasuje do „${szukaj.value.trim()}”.` : "Brak kontaktów.");
       return;
     }
-    widoczni.forEach((k) => lista.appendChild(kartaKontaktu(k, c)));
+    widoczni.forEach((k) => lista.appendChild(kartaKontaktu(k, c, () => {
+      wszyscy.splice(wszyscy.indexOf(k), 1);
+      rysuj();
+    })));
   };
 
   let timer: any;
@@ -2661,11 +2988,116 @@ async function zakladkaKontakty(box: HTMLElement, s: HTMLElement, c: Company) {
   rysuj();
 }
 
+// filtry zakladki Supporty - pamietane w obrebie firmy
+let filtrSupportow = { firma: "", obslugujacy: "", dlaKogo: "" };
+
 async function zakladkaSupporty(box: HTMLElement, s: HTMLElement, c: Company) {
-  const items = await getTicketsFiltered({ companyGuid: c.guid, top: 50 });
-  s.textContent = `Zgłoszenia — ${items.length}`;
-  if (!items.length) return pusto(box, "Brak zgłoszeń.");
-  items.map(toTicket).forEach((t) => box.appendChild(karta(t)));
+  // wiecej niz 50 - filtrujemy po stronie dodatku, wiec potrzebna jest cala historia firmy
+  const wszystkie = (await getTicketsFiltered({ companyGuid: c.guid, top: 999 })).map(toTicket);
+  if (!wszystkie.length) {
+    s.textContent = "Zgłoszenia — 0";
+    return pusto(box, "Brak zgłoszeń.");
+  }
+  if (filtrSupportow.firma !== c.guid) filtrSupportow = { firma: c.guid, obslugujacy: "", dlaKogo: "" };
+
+  // opcje z liczba zgloszen
+  type Opcja = [string, { nazwa: string; ile: number }];
+  const opcje = (zgl: Ticket[], klucz: (t: Ticket) => string, nazwa: (t: Ticket) => string): Opcja[] => {
+    const m = new Map<string, { nazwa: string; ile: number }>();
+    zgl.forEach((t) => {
+      const k = klucz(t);
+      if (!k) return;
+      const o = m.get(k) ?? { nazwa: nazwa(t) || k, ile: 0 };
+      o.ile++;
+      m.set(k, o);
+    });
+    return [...m.entries()].sort((a, b) => a[1].nazwa.localeCompare(b[1].nazwa, "pl"));
+  };
+  // obslugujacy tylko po nazwie (Dodatkowy_opiekun) - MailCreator bywa rozny dla tej samej osoby
+  const kluczObsl = (t: Ticket) => t.opiekun.trim().replace(/\s+/g, " ").toLowerCase();
+  // osoba tez tylko po nazwie (Osoba) - mail zglaszajacego bywa rozny lub pusty
+  const kluczOsoby = (t: Ticket) => t.osoba.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const filtry = el("div", "crm-sup-filtry");
+  const wybor = (etykieta: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const sel = document.createElement("select");
+    sel.className = "crm-select";
+    k.appendChild(sel);
+    filtry.appendChild(k);
+    return sel;
+  };
+  /** Opcje listy od nowa; wybor zostaje, jesli nadal wystepuje. */
+  const wypelnij = (sel: HTMLSelectElement, wszyscy: string, zgl: Ticket[], lista: Opcja[], wartosc: string) => {
+    sel.innerHTML = "";
+    ([["", { nazwa: wszyscy, ile: zgl.length }]] as Opcja[]).concat(lista).forEach(([v, o]) => {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = `${o.nazwa} (${o.ile})`;
+      sel.appendChild(opt);
+    });
+    sel.value = lista.some(([v]) => v === wartosc) ? wartosc : "";
+  };
+  const obslugujacy = wybor("Obsługujący");
+  const dlaKogo = wybor("Dla kogo");
+
+  // filtr kaskadowy: kazda lista pokazuje tylko osoby z zgloszen pasujacych do drugiego filtra
+  const odswiezOpcje = () => {
+    const dlaObsl = wszystkie.filter((t) => !filtrSupportow.dlaKogo || kluczOsoby(t) === filtrSupportow.dlaKogo);
+    const dlaOsob = wszystkie.filter((t) => !filtrSupportow.obslugujacy || kluczObsl(t) === filtrSupportow.obslugujacy);
+    wypelnij(obslugujacy, "wszyscy", dlaObsl, opcje(dlaObsl, kluczObsl, (t) => t.opiekun), filtrSupportow.obslugujacy);
+    wypelnij(dlaKogo, "wszystkie osoby", dlaOsob, opcje(dlaOsob, kluczOsoby, (t) => t.osoba), filtrSupportow.dlaKogo);
+  };
+  odswiezOpcje();
+  const wyczysc = el("button", "crm-btn crm-btn-cichy crm-sup-wyczysc", "Wyczyść filtry") as HTMLButtonElement;
+  filtry.appendChild(wyczysc);
+  box.appendChild(filtry);
+
+  const lista = el("div");
+  box.appendChild(lista);
+  const NA_STRONE = 50;
+
+  const rysuj = () => {
+    filtrSupportow.obslugujacy = obslugujacy.value;
+    filtrSupportow.dlaKogo = dlaKogo.value;
+    const widoczne = wszystkie.filter((t) =>
+      (!obslugujacy.value || kluczObsl(t) === obslugujacy.value) &&
+      (!dlaKogo.value || kluczOsoby(t) === dlaKogo.value)
+    );
+    const filtrowane = !!(obslugujacy.value || dlaKogo.value);
+    wyczysc.hidden = !filtrowane;
+    s.textContent = filtrowane
+      ? `Zgłoszenia — ${widoczne.length} z ${wszystkie.length}`
+      : `Zgłoszenia — ${wszystkie.length}`;
+    lista.innerHTML = "";
+    if (!widoczne.length) return pusto(lista, "Brak zgłoszeń dla wybranych filtrów.");
+
+    let pokazane = 0;
+    const wiecej = el("button", "crm-btn crm-btn-cichy crm-sup-wiecej") as HTMLButtonElement;
+    const dorysuj = () => {
+      widoczne.slice(pokazane, pokazane + NA_STRONE).forEach((t) => lista.insertBefore(karta(t), wiecej));
+      pokazane = Math.min(pokazane + NA_STRONE, widoczne.length);
+      wiecej.textContent = `Pokaż więcej (${widoczne.length - pokazane})`;
+      wiecej.hidden = pokazane >= widoczne.length;
+    };
+    lista.appendChild(wiecej);
+    wiecej.onclick = dorysuj;
+    dorysuj();
+  };
+  const zmiana = () => {
+    filtrSupportow.obslugujacy = obslugujacy.value;
+    filtrSupportow.dlaKogo = dlaKogo.value;
+    odswiezOpcje();
+    rysuj();
+  };
+  obslugujacy.onchange = zmiana;
+  dlaKogo.onchange = zmiana;
+  wyczysc.onclick = () => {
+    obslugujacy.value = dlaKogo.value = "";
+    zmiana();
+  };
+  rysuj();
 }
 
 /** Edycja wlasnej notatki: data, osoba, rodzaj, tresc, follow-up. Pola maila zostaja bez zmian. */
@@ -2896,27 +3328,34 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   lista.forEach((nt) => box.appendChild(kartaNotatki(nt, ja)));
 }
 
-async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
-  segment(box, ["Bieżące", "Archiwalne", "Demo"], tecsTryb, (v) => {
+async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo = true) {
+  // widok maila handlowca pokazuje tylko szanse TECS, bez kodow demo
+  if (!zDemo && tecsTryb === "Demo") tecsTryb = "Bieżące";
+  segment(box, zDemo ? ["Bieżące", "Archiwalne", "Demo"] : ["Bieżące", "Archiwalne"], tecsTryb, (v) => {
     tecsTryb = v as typeof tecsTryb;
-    void pokazFirma(c);
+    void odswiezTecs(c);
   });
 
-  // nowa szansa TECS - przycisk nad lista albo od razu po wygranej szansie
+  // notatki firmy jednym zapytaniem - przy TECS-ach grupujemy je po Opps_ID = TECSGUID
+  const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
+  notatki.catch((e) => console.error("notatki TECS:", e));
+  const ja = getMojaNazwa().then((n) => n.trim().toLowerCase(), () => "");
+
+  // nowa szansa TECS - z paska firmy, po wygranej szansie albo przyciskiem nad lista w widoku maila
   const nowyBox = el("div");
   box.appendChild(nowyBox);
   const otworzFormTecs = (zSzansy: Szansa | null = null) => {
     nowyBtn.disabled = true;
     void formularzNowegoTecs(nowyBox, c, zSzansy, () => {
       tecsTryb = "Bieżące";
-      void pokazFirma(c);
+      void odswiezTecs(c);
     }, () => {
       nowyBox.innerHTML = "";
-      nowyBox.appendChild(nowyBtn);
+      if (!zDemo) nowyBox.appendChild(nowyBtn);
       nowyBtn.disabled = false;
     });
   };
-  const nowyBtn = przyciskIk("crm-btn crm-tecs-nowy", "licencja", "Nowa szansa TECS");
+  const nowyBtn = przyciskIk("crm-btn crm-tecs-nowy crm-nowa-szansa", "nowaSzansa", "Nowy Opps TECS");
   nowyBtn.onclick = () => {
     nowyBox.innerHTML = "";
     otworzFormTecs();
@@ -2925,7 +3364,7 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     otworzNowyTecs = false;
     otworzFormTecs(nowyTecsZSzansy);
     nowyTecsZSzansy = null;
-  } else nowyBox.appendChild(nowyBtn);
+  } else if (!zDemo) nowyBox.appendChild(nowyBtn); // w karcie firmy jest "Nowy Opps TECS" w pasku
 
   // nowe kody demo - formularz nad lista, otwierany kafelkiem pod zakladkami
   if (otworzKodyDemo) {
@@ -2937,6 +3376,13 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
 
   const items = await getByCompany("Opps_TECS", c.guid, { top: 100 });
   const wszystkie = items.map(toTecs);
+  if (autoTecs) {
+    autoTecs = false;
+    if (tecsTryb === "Bieżące" && !wszystkie.some((t) => ETAPY_TECS_BIEZACE.includes(t.etap))) {
+      tecsTryb = "Archiwalne";
+      zaznaczSegment(box, tecsTryb);
+    }
+  }
   const lista =
     tecsTryb === "Bieżące"
       ? wszystkie.filter((t) => ETAPY_TECS_BIEZACE.includes(t.etap))
@@ -2980,7 +3426,7 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
     k.appendChild(pasekTerminu(d));
 
     if (!t.demo && t.guid) {
-      const rzadP = el("div", "crm-akcje crm-szansa-akcje");
+      const rzadP = el("div", "crm-akcje crm-szansa-akcje crm-karta-akcje");
       const szcz = przyciskIk("crm-btn crm-btn-cichy", "flaga", "Szczegóły i etap");
       rzadP.appendChild(szcz);
       const panelSzcz = el("div");
@@ -2997,12 +3443,17 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
         } else pokazSzczegoly();
       };
       if (otwartySzczegolTecs === t.id) pokazSzczegoly();
-      const prod = przyciskIk("crm-btn crm-btn-cichy", "paczka", "Produkty i ceny");
+      const prod = przyciskIk("crm-btn crm-btn-cichy", "paczka", "Produkty");
       rzadP.appendChild(prod);
       k.appendChild(rzadP);
       k.appendChild(panelSzcz);
       const panel = el("div");
       k.appendChild(panel);
+      sekcjaNotatek(k, rzadP, {
+        id: t.id, guid: t.guid, nazwa: t.nazwa, firma: t.firmaId, companyGuid: c.guid, etap: t.etap,
+      }, c, notatki, ja, "Brak notatek do tego TECS-u.");
+      sekcjaZalacznikow(k, rzadP, "Opps_TECS", t.id, folderFirmy(c));
+      przyciskGenerujOferte(rzadP);
       prod.onclick = () => {
         if (panel.childElementCount) {
           panel.innerHTML = "";
@@ -3041,12 +3492,23 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company) {
   });
 }
 
+/** Po zapisie TECS-u: odswiezamy ten widok, w ktorym jestesmy - szanse maila albo karte firmy. */
+function odswiezTecs(c: Company): Promise<void> {
+  if (widok === "szanse") {
+    szanseRodzaj = "TECS";
+    return pokazSzanse();
+  }
+  return pokazFirma(c);
+}
+
 // ---------------------------------------------------------------- szczegoly TECS (conTECSView)
 
 // etapy TECS (Etap1, tekst) - sciezka zwykla i osobna dla Tech Poola, jak w Power Apps
 const ETAPY_TECS = ["Przygotowanie oferty", "Oferta wysłana", "Zamówione", "Wystawiona faktura"];
 const ETAPY_TP = ["Tech Pool", "Koniec Tech Poola"];
 const REZYGNACJA_TECS = "Rezygnacja z TECS";
+// dodawanie, edycja i usuwanie produktow TECS-u - tylko przed wyslaniem zamowienia
+const ETAPY_EDYCJI_PRODUKTOW_TECS = ["Przygotowanie oferty", "Oferta wysłana"];
 // "Wystawiona faktura" i etapy Tech Poola nie trafialy dotad do zadnej listy - dopisane
 const ETAPY_TECS_BIEZACE = ["Przygotowanie oferty", "Oferta wysłana", "Tech Pool"];
 const ETAPY_TECS_ARCHIWALNE = ["Oferta wysłana", "Zamówione", "Wystawiona faktura", REZYGNACJA_TECS, "Koniec Tech Poola"];
@@ -3130,7 +3592,7 @@ function panelTecs(t: TecsRow, c: Company): HTMLElement {
       if (!ETAPY_TECS_BIEZACE.includes(etap) && tecsTryb === "Bieżące") tecsTryb = "Archiwalne";
       if (!ETAPY_TECS_ARCHIWALNE.includes(etap) && tecsTryb === "Archiwalne") tecsTryb = "Bieżące";
       otwartySzczegolTecs = t.id;
-      await pokazFirma(c);
+      await odswiezTecs(c);
     } catch (e: any) {
       komunikat.textContent = e?.message ?? String(e);
       komunikat.className = "crm-komunikat crm-blad";
@@ -3170,7 +3632,7 @@ function panelTecs(t: TecsRow, c: Company): HTMLElement {
     rzad.style.display = "none";
     void formularzNowegoTecs(edycjaBox, c, null, () => {
       tecsTryb = "Bieżące";
-      void pokazFirma(c);
+      void odswiezTecs(c);
     }, () => {
       edycjaBox.innerHTML = "";
       rzad.style.display = "";
@@ -3180,7 +3642,7 @@ function panelTecs(t: TecsRow, c: Company): HTMLElement {
     rzad.style.display = "none";
     void formularzNowegoTecs(edycjaBox, c, null, () => {
       otwartySzczegolTecs = t.id;
-      void pokazFirma(c);
+      void odswiezTecs(c);
     }, () => {
       edycjaBox.innerHTML = "";
       rzad.style.display = "";
@@ -3237,7 +3699,8 @@ async function produktyTecs(miejsce: HTMLElement, t: TecsRow, c: Company, nowaWa
         ? getByCompany("Oferty_TECS", t.guidOld, { pole: "IdentyfikatorTECS", top: 200 })
         : Promise.resolve([] as ListItem[]),
     ]);
-    pracownik = p;
+    // produkty zmieniamy tylko przed zamowieniem - potem lista jest zamrozona
+    pracownik = p && ETAPY_EDYCJI_PRODUKTOW_TECS.includes(t.etap);
     ceny = cn;
     pozycje = biez.map(toProduktTecs);
     poprzednie = stare.map(toProduktTecs);
@@ -3253,6 +3716,10 @@ async function produktyTecs(miejsce: HTMLElement, t: TecsRow, c: Company, nowaWa
   const komunikat = el("div", "crm-komunikat");
   const dodajBox = el("div", "crm-tecs-dodaj");
   box.append(lista, dodajBox, stopka, komunikat);
+  if (!ETAPY_EDYCJI_PRODUKTOW_TECS.includes(t.etap)) {
+    dodajBox.appendChild(el("div", "crm-nowe-info",
+      `Etap „${t.etap || "—"}” — produkty można zmieniać tylko na etapach: ${ETAPY_EDYCJI_PRODUKTOW_TECS.join(", ")}.`));
+  }
 
   if (pracownik) {
     const dodaj = przyciskIk("crm-btn crm-tecs-nowy", "paczka", "Dodaj produkt");
@@ -3391,6 +3858,7 @@ async function produktyTecs(miejsce: HTMLElement, t: TecsRow, c: Company, nowaWa
       kol("Suma pozycji", euro(razem)),
       kol("Wartość TECS w systemie", euro(t.wartosc || 0), zgodne ? "crm-ok" : "crm-nf-uwaga")
     );
+    if (!pracownik) return;
     const przelicz = przyciskIk("crm-btn crm-btn-cichy", "wykres", "Przelicz wartość");
     przelicz.disabled = zgodne;
     przelicz.title = zgodne ? "Wartość zgodna z sumą pozycji" : "Zapisz sumę pozycji jako wartość TECS";
@@ -3708,7 +4176,7 @@ async function formularzNowegoTecs(
   const box = el("div", "crm-nowe crm-demo");
   miejsce.appendChild(box);
   box.appendChild(poleIk("crm-demo-tytul", renewal ? "wykres" : "dokument",
-    edycja ? "Edycja szansy TECS" : renewal ? "Renewal TECS" : "Nowa szansa TECS"));
+    edycja ? "Edycja szansy TECS" : renewal ? "Renewal TECS" : "Nowy Opps TECS"));
   box.appendChild(el("div", "crm-nowe-info",
     (firmaPelna?.pelna || skrocona) + (zSzansy ? ` · z wygranej szansy: ${zSzansy.nazwa}` : "")
     + (renewal ? ` · na podstawie: ${renewal.nazwa}` : "")));
@@ -4533,12 +5001,751 @@ async function formularzLicencjiDemo(
   };
 }
 
+// ---------------------------------------------------------------- nowa szansa sprzedazy (conOppsForm)
+
+// domyslne Źródło szansy wg zalogowanego - jak DefaultSelectedItems w Power Apps
+// (inne niz przy nowej firmie: tam ZRODLO_HANDLOWCA)
+const ZRODLO_SZANSY: Record<string, string> = {
+  "Mateusz Nowakowski": "MNow",
+  "Łukasz Borgul": "LBor",
+  "Przemysław Draga": "PDra",
+  "Grzegorz Woźniak": "PDra",
+};
+
+/** Nowa szansa sprzedazy Soft w liscie Opps - odpowiednik FormNowyOpps z Power Apps. */
+async function formularzNowejSzansy(
+  miejsce: HTMLElement,
+  c: Company,
+  poZapisie: (nowa?: Szansa) => void,
+  anuluj: () => void,
+  edycja: Szansa | null = null // edycja istniejacej szansy - bez statusu i etapu (te w panelu "Status i etap")
+) {
+  const box = el("div", "crm-nowe crm-demo crm-ns");
+  miejsce.appendChild(box);
+  const naglowek = el("div", "crm-ns-naglowek");
+  const ik = el("span", "crm-ns-ik");
+  ik.appendChild(ikona("wykres"));
+  const tytul = el("div");
+  tytul.append(
+    el("div", "crm-ns-tytul", edycja ? "Edycja szansy sprzedaży" : "Nowa szansa sprzedaży – Soft"),
+    el("div", "crm-nowe-info", edycja ? `${edycja.firma || c.nazwa} — ${edycja.nazwa}` : firmaPelna?.pelna || firmaPelna?.skrocona || c.nazwa)
+  );
+  naglowek.append(ik, tytul);
+  box.appendChild(naglowek);
+
+  const skrocona = firmaPelna?.skrocona || c.nazwa;
+  const sekcja = (t: string) => box.appendChild(el("div", "crm-nf-sekcja", t));
+  const wybor = (etykieta: string) => {
+    box.appendChild(el("label", "crm-label", etykieta));
+    const sel = document.createElement("select");
+    sel.className = "crm-select";
+    box.appendChild(sel);
+    return sel;
+  };
+  const wypelnij = (sel: HTMLSelectElement, opcje: string[], domyslna: string, pusta = "wybierz…") => {
+    sel.innerHTML = "";
+    ["", ...opcje].forEach((o) => {
+      const opt = document.createElement("option");
+      opt.value = o;
+      opt.textContent = o || pusta;
+      sel.appendChild(opt);
+    });
+    // wielkosc liter w opcjach kolumny bywa inna niz w Power Apps ("New logo" / "New Logo")
+    sel.value = opcje.find((o) => o.toLowerCase() === domyslna.toLowerCase()) ?? "";
+  };
+
+  // --- SZANSA ---
+  sekcja("Szansa");
+  const nazwa = poleFormularza(box, "Nazwa szansy");
+  const d = new Date();
+  nazwa.value = `Q${Math.ceil((d.getMonth() + 1) / 3)}_${d.getFullYear()}_${skrocona}`;
+  const wartosc = poleFormularza(box, "Wartość (EUR)", "number");
+  wartosc.min = "0";
+  wartosc.step = "0.01";
+  wartosc.placeholder = "0";
+  const etap = wybor("Etap *");
+  const status = wybor("Status *");
+  const typ = wybor("Typ biznesu");
+
+  // --- TERMINY ---
+  sekcja("Terminy");
+  const otwarcie = poleFormularza(box, "Data otwarcia", "date");
+  otwarcie.value = dzisISO();
+  const zamkniecie = poleFormularza(box, "Spodziewane zamknięcie", "date");
+  const zamkHint = el("div", "crm-nowe-info", `np. ${dataPL(plusDni(dzisISO(), 183))} (za pół roku)`);
+  box.appendChild(zamkHint);
+  const dr = poleFormularza(box, "Data DR", "date");
+
+  // --- PRZYPISANIE ---
+  sekcja("Przypisanie");
+  const opiekun = wybor("Opiekun Oppsa *");
+  const zrodlo = wybor("Źródło *");
+  const rodzaj = wybor("Rodzaj biznesu *");
+
+  // --- Champion: z kontaktow firmy albo wpisany ---
+  box.appendChild(el("label", "crm-label", "Champion *"));
+  const champion = document.createElement("input");
+  champion.type = "text";
+  champion.className = "crm-input";
+  champion.placeholder = "Imię i nazwisko osoby decyzyjnej";
+  box.appendChild(champion);
+  const wyborOsoby = el("div", "crm-ns-osoby");
+  const szukaj = document.createElement("input");
+  szukaj.type = "search";
+  szukaj.className = "crm-szukaj";
+  szukaj.placeholder = "Szukaj osoby w kontaktach firmy";
+  const listaOsob = el("div", "crm-ns-lista");
+  wyborOsoby.append(szukaj, listaOsob);
+  box.appendChild(wyborOsoby);
+
+  box.appendChild(el("label", "crm-label", "Notatki"));
+  const notatki = document.createElement("textarea");
+  notatki.className = "crm-textarea";
+  notatki.rows = 4;
+  notatki.placeholder = "Kontekst szansy, potrzeby klienta, konkurencja…";
+  box.appendChild(notatki);
+
+  // --- przyciski ---
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", edycja ? "Zapisz zmiany" : "Zapisz szansę") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  function sprawdz(): boolean {
+    const brak: string[] = [];
+    if (!etap.value && !edycja) brak.push("Etap");
+    if (!status.value && !edycja) brak.push("Status");
+    if (!opiekun.value) brak.push("Opiekun");
+    if (!zrodlo.value) brak.push("Źródło");
+    if (!rodzaj.value) brak.push("Rodzaj biznesu");
+    if (!champion.value.trim()) brak.push("Champion");
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "Wszystko gotowe do zapisu" : `Uzupełnij: ${brak.join(", ")}`;
+    brakujace.classList.toggle("crm-ns-gotowe", ok);
+    return ok;
+  }
+  [etap, status, opiekun, zrodlo, rodzaj].forEach((x) => (x.onchange = () => sprawdz()));
+  champion.oninput = () => {
+    rysujOsoby();
+    sprawdz();
+  };
+  sprawdz();
+
+  // --- opcje z definicji kolumn Opps, opiekunowie, kontakty ---
+  let ja = "";
+  let kluczZrodla = "";
+  let idZrodel = new Map<string, string>(); // lookup: etykieta -> Id; pusta mapa = kolumna wyboru
+  let kontakty: Contact[] = [];
+  try {
+    const [etapy, statusy, typy, rodzaje, osoby, mojaNazwa, kt, nazwaZrodla] = await Promise.all([
+      getChoiceOptions("Opps", "Etap"),
+      getChoiceOptions("Opps", "Status"),
+      getChoiceOptions("Opps", "TypBiznesu"),
+      getChoiceOptions("Opps", "Rodzajbiznesu"),
+      getOpiekunowie().catch(() => [] as string[]),
+      getMojaNazwa().catch(() => ""),
+      getContactsByCompany(c.guid).catch(() => [] as ListItem[]),
+      nazwaWewnetrzna("Opps", "Źródło"),
+    ]);
+    // firma bez zadnej szansy TECS = nowy klient; przy bledzie pobrania nie zgadujemy
+    const tecsy = await getByCompany("Opps_TECS", c.guid, { top: 1 }).catch(() => null);
+    ja = mojaNazwa.trim();
+    wypelnij(etap, etapy, "Pierwszy kontakt", "Wybierz etap");
+    wypelnij(status, statusy, "Aktywny");
+    wypelnij(typ, typy, "Paid-up");
+    wypelnij(rodzaj, rodzaje, tecsy && !tecsy.length ? "New Logo" : "", "Wybierz rodzaj");
+    wypelnij(opiekun, ja && !osoby.includes(ja) ? [ja, ...osoby] : osoby, ja);
+
+    // Źródło: kolumna wyboru, a gdyby byla lookupem (jak w Companies) - Id pozycji
+    let zrodla = await getChoiceOptions("Opps", nazwaZrodla);
+    if (!zrodla.length) {
+      const lookup = await getOpcjeLookupu("Opps", "Źródło").catch(() => null);
+      if (lookup) {
+        idZrodel = new Map(lookup.opcje.map((o) => [o.etykieta, o.id]));
+        zrodla = lookup.opcje.map((o) => o.etykieta);
+      }
+    }
+    kluczZrodla = nazwaZrodla;
+    wypelnij(zrodlo, zrodla, ZRODLO_SZANSY[ja] ?? "");
+
+    if (edycja) wypelnijZSzansy(edycja, zrodla);
+
+    kontakty = kt.map(toContact).filter((x) => x.aktywny)
+      .sort((a, b) => (a.nazwisko || a.imieNazwisko).localeCompare(b.nazwisko || b.imieNazwisko, "pl"));
+  } catch (e: any) {
+    komunikat.textContent = `Nie pobrano opcji: ${e?.message ?? e}`;
+    komunikat.className = "crm-komunikat crm-blad";
+  }
+
+  // edycja: status i etap zmienia sie w panelu "Status i etap" (zamkniecie wymaga daty / powodu)
+  if (edycja) {
+    [etap, status].forEach((x) => {
+      x.hidden = true;
+      (x.previousElementSibling as HTMLElement | null)?.setAttribute("hidden", "");
+    });
+  }
+
+  /** Wartosci istniejacej szansy w polach formularza. */
+  function wypelnijZSzansy(o: Szansa, zrodla: string[]) {
+    const p = o.pola as Record<string, unknown>;
+    const dzien = (v: unknown) => {
+      if (!v) return "";
+      const d = new Date(String(v));
+      return isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const ustaw = (sel: HTMLSelectElement, v: string) => {
+      if (!v) return;
+      if (!Array.from(sel.options).some((x) => x.value === v)) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = v;
+        sel.appendChild(opt);
+      }
+      sel.value = v;
+    };
+    nazwa.value = o.nazwa;
+    wartosc.value = p["Warto_x015b__x0107_wEUR"] == null ? "" : String(p["Warto_x015b__x0107_wEUR"]);
+    otwarcie.value = dzien(p.Dataotwarcia);
+    zamkniecie.value = dzien(p["Spodziewanezamkni_x0119_cie"]);
+    dr.value = dzien(p.TerminDR);
+    ustaw(typ, String(p.TypBiznesu ?? ""));
+    ustaw(rodzaj, String(p.Rodzajbiznesu ?? ""));
+    ustaw(opiekun, String(p.Creator ?? "").trim());
+    champion.value = String(p.DISCH ?? "");
+    notatki.value = String(p.Notatki ?? "");
+    // Źródło: lookup trzyma Id pozycji, wybor - tekst; bez wartosci nie podstawiamy domyslnej handlowca
+    zrodlo.value = "";
+    const surowe = p[`${kluczZrodla}LookupId`] ?? p[`OData_${kluczZrodla}LookupId`] ?? p[kluczZrodla] ?? p[`OData_${kluczZrodla}`];
+    if (surowe != null) {
+      const etykieta = idZrodel.size
+        ? [...idZrodel.entries()].find(([, id]) => String(id) === String(surowe))?.[0] ?? ""
+        : String(surowe);
+      if (etykieta && zrodla.includes(etykieta)) zrodlo.value = etykieta;
+    }
+  }
+
+  function rysujOsoby() {
+    const q = szukaj.value.trim().toLowerCase();
+    const wybrany = champion.value.trim().toLowerCase();
+    listaOsob.innerHTML = "";
+    const pasuja = kontakty.filter((k) => !q || [k.imie, k.nazwisko, k.imieNazwisko].some((x) => x.toLowerCase().startsWith(q)));
+    if (!pasuja.length) return pusto(listaOsob, kontakty.length ? "Nikt nie pasuje." : "Brak kontaktów");
+    pasuja.forEach((k) => {
+      const b = el("button", "crm-ns-osoba") as HTMLButtonElement;
+      if (k.imieNazwisko.trim().toLowerCase() === wybrany) b.classList.add("crm-ns-osoba-akt");
+      b.appendChild(ikona("osoba"));
+      const t = el("span");
+      t.append(el("span", "crm-ns-osoba-nazwa", k.imieNazwisko), el("span", "crm-ns-osoba-stan", k.stanowisko || " "));
+      b.appendChild(t);
+      b.onclick = () => {
+        champion.value = k.imieNazwisko;
+        rysujOsoby();
+        sprawdz();
+      };
+      listaOsob.appendChild(b);
+    });
+  }
+  szukaj.oninput = rysujOsoby;
+  rysujOsoby();
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = wstecz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      // pole Osoba wymaga Id uzytkownika witryny - mail z MEScoStaff albo wlasny
+      const mail = opiekun.value === ja
+        ? await getMojMail().catch(() => Office.context.mailbox.userProfile.emailAddress ?? "")
+        : (await getSerwisanci().catch(() => [])).find((x) => x.nazwa === opiekun.value)?.mail ?? "";
+      const opiekunId = mail ? await getSiteUserId(mail) : null;
+      // w edycji niezmieniony opiekun zostaje jak byl - nie musi byc na liscie pracownikow
+      const bezZmianyOpiekuna = !!edycja && opiekun.value === String(edycja.pola.Creator ?? "").trim();
+      if (opiekunId === null && !bezZmianyOpiekuna) {
+        throw new Error(`nie znaleziono użytkownika witryny dla „${opiekun.value}”`);
+      }
+
+      const pola: Record<string, unknown> = {
+        Nazwaszansysprzeda_x017c_y: nazwa.value.trim(),
+        Etap: etap.value,
+        Etap1: etap.value,
+        Status: status.value,
+        Status1: status.value,
+        Rodzajbiznesu: rodzaj.value,
+        OpiekunOppsaLookupId: opiekunId,
+        DISCH: champion.value.trim(),
+        Notatki: notatki.value,
+        Firma: skrocona,
+        Creator: opiekun.value,
+        OPPSGUID: nowyGuid(),
+        IdentyfikatorCompanies: c.guid,
+        OppsDomen_x0040_: firmaPelna?.guid === c.guid ? firmaPelna.domena : "",
+      };
+      if (typ.value) pola.TypBiznesu = typ.value;
+      if (wartosc.value !== "") pola["Warto_x015b__x0107_wEUR"] = Number(wartosc.value);
+      if (otwarcie.value) pola.Dataotwarcia = dzienSP(otwarcie.value);
+      if (zamkniecie.value) pola["Spodziewanezamkni_x0119_cie"] = dzienSP(zamkniecie.value);
+      if (dr.value) pola.TerminDR = dzienSP(dr.value);
+      if (edycja) {
+        // tylko pola formularza - status, etap, GUID i powiazanie z firma bez zmian; puste daty czyscimy
+        ["Etap", "Etap1", "Status", "Status1", "OPPSGUID", "Firma", "IdentyfikatorCompanies", "OppsDomen_x0040_"]
+          .forEach((k) => delete pola[k]);
+        if (opiekunId === null) delete pola.OpiekunOppsaLookupId;
+        if (wartosc.value === "") pola["Warto_x015b__x0107_wEUR"] = null;
+        if (!otwarcie.value) pola.Dataotwarcia = null;
+        if (!zamkniecie.value) pola["Spodziewanezamkni_x0119_cie"] = null;
+        if (!dr.value) pola.TerminDR = null;
+      }
+      // nazwa pola Źródło w Graph nie jest pewna: kolumna zaczyna sie od podkreslnika,
+      // a Graph raz chce prefiks "OData_", raz nie - probujemy wariantow po kolei
+      const sufiks = idZrodel.size ? "LookupId" : "";
+      const warianty = [`${kluczZrodla}${sufiks}`, `OData_${kluczZrodla}${sufiks}`];
+      const wartoscZrodla = idZrodel.size ? idZrodel.get(zrodlo.value) : zrodlo.value;
+      let nowa: Szansa | undefined;
+      for (let i = 0; ; i++) {
+        warianty.forEach((w) => delete pola[w]);
+        pola[warianty[i]] = wartoscZrodla;
+        try {
+          if (edycja) nowa = await zapiszSzanse(edycja, pola);
+          else await createListItem("Opps", pola);
+          break;
+        } catch (e: any) {
+          const nieznane = String(e?.message ?? "").includes(`'${warianty[i]}' is not recognized`);
+          if (!nieznane || i === warianty.length - 1) throw e;
+        }
+      }
+      komunikat.textContent = edycja ? "Zmiany zapisane" : `Dodano szansę ${nazwa.value.trim()}`;
+      komunikat.className = "crm-komunikat crm-ok";
+      poZapisie(nowa);
+    } catch (e: any) {
+      komunikat.textContent = `Nie udało się zapisać szansy: ${e?.message ?? e}`;
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = wstecz.disabled = false;
+    }
+  };
+}
+
+// ---------------------------------------------------------------- produkty szansy (conDsOferta / conDsProdukt)
+
+const TYPY_PRODUKTU_SZANSY: { tekst: string; wartosc: ProduktSzansy["typ"] }[] = [
+  { tekst: "Paid-up + TECS", wartosc: "PU" },
+  { tekst: "Lease", wartosc: "L" },
+  { tekst: "AEC", wartosc: "AEC" },
+  { tekst: "ALH", wartosc: "ALH" },
+];
+
+const opisTypuProduktu = (p: ProduktSzansy) =>
+  p.typ === "PU" ? "Paid-up" : p.typ === "L" ? `Lease ${p.dni} dni` : p.typ || "—";
+
+/** Rabat z progow: najwyzszy prog schematu, ktorego "Od" nie przekracza liczby licencji. */
+function rabatZProgow(progi: ProgRabatu[], schemat: string, ile: number): number {
+  if (!schemat) return 0;
+  const pasujace = progi.filter((p) => p.schemat === schemat && p.od <= ile).sort((a, b) => b.od - a.od);
+  return pasujace[0]?.rabat ?? 0;
+}
+
+/** Wyliczenie pozycji jak w Power Apps - ceny za licencje i suma z rabatem. */
+function wyliczProduktSzansy(cena: CenaTecs | undefined, typ: ProduktSzansy["typ"], ile: number, rabatPr: number, dni: number) {
+  const pu = cena?.paidUp ?? 0;
+  const r = 1 - rabatPr / 100;
+  const lease = typ === "L" ? r2(((cena?.lease ?? 0) / 365) * mnoznikDzierzawy(dni) * dni * r) : 0;
+  const suma = r2(
+    (typ === "PU" ? (pu + (cena?.tecs ?? 0)) * ile * r : 0) +
+    (typ === "AEC" || typ === "ALH" ? ile * pu * r : 0) +
+    (typ === "L" ? ile * lease : 0)
+  );
+  return {
+    paidUp: typ === "PU" ? pu : 0,
+    tecs: typ === "PU" ? cena?.tecs ?? 0 : 0,
+    lease,
+    aec: typ === "AEC" ? pu : 0,
+    alh: typ === "ALH" ? pu : 0,
+    suma,
+  };
+}
+
+/** Lista produktow szansy z suma i "Przelicz wartosc". Zmiany tylko przy aktywnej szansie. */
+async function produktySzansy(miejsce: HTMLElement, o: Szansa, c: Company, nowaWartosc: (nowa: Szansa) => void) {
+  const box = el("div", "crm-tecs-produkty");
+  miejsce.appendChild(box);
+  const stan = el("div", "crm-komunikat", "Wczytywanie produktów...");
+  box.appendChild(stan);
+
+  let edycja = false;
+  let ceny = new Map<string, CenaTecs>();
+  let progi: ProgRabatu[] = [];
+  let pozycje: ProduktSzansy[] = [];
+  try {
+    const [p, cn, pr, it] = await Promise.all([
+      czyPracownikMESco().catch(() => false),
+      getCenyTecs().catch((e) => {
+        console.warn("cennik:", e);
+        return new Map<string, CenaTecs>();
+      }),
+      getProgiRabatowe().catch((e) => {
+        console.warn("progi rabatowe:", e);
+        return [] as ProgRabatu[];
+      }),
+      getByCompany("Oferty", o.guid, { pole: "IdentyfikatorOpps", top: 200 }),
+    ]);
+    edycja = p && o.status === "Aktywny";
+    ceny = cn;
+    progi = pr;
+    pozycje = it.map(toProduktSzansy);
+  } catch (e: any) {
+    stan.textContent = `Błąd: ${e?.message ?? e}`;
+    stan.className = "crm-komunikat crm-blad";
+    return;
+  }
+  stan.remove();
+
+  const lista = el("div", "crm-tecs-lista");
+  const dodajBox = el("div", "crm-tecs-dodaj");
+  const stopka = el("div", "crm-tecs-stopka");
+  const komunikat = el("div", "crm-komunikat");
+  box.append(lista, dodajBox, stopka, komunikat);
+
+  const ok = (t: string) => {
+    komunikat.textContent = t;
+    komunikat.className = "crm-komunikat crm-ok";
+  };
+  const blad = (e: any) => {
+    komunikat.textContent = e?.message ?? String(e);
+    komunikat.className = "crm-komunikat crm-blad";
+  };
+
+  if (edycja) {
+    const dodaj = przyciskIk("crm-btn crm-tecs-nowy", "paczka", "Dodaj produkt");
+    dodajBox.appendChild(dodaj);
+    dodaj.onclick = () => {
+      dodaj.disabled = true;
+      const forma = formularzProduktuSzansy(o, c, ceny, progi, null, (nowy) => {
+        pozycje.push(nowy);
+        forma.remove();
+        dodaj.disabled = false;
+        ok(`Zapisano ${nowy.produkt}. Pamiętaj o „Przelicz wartość”.`);
+        rysuj();
+      }, () => {
+        forma.remove();
+        dodaj.disabled = false;
+      });
+      dodajBox.appendChild(forma);
+    };
+  } else {
+    dodajBox.appendChild(el("div", "crm-nowe-info", o.status === "Aktywny"
+      ? "Produkty mogą zmieniać tylko osoby z MEScoStaff."
+      : `Szansa „${o.status || "—"}” — produkty można zmieniać tylko przy aktywnej szansie.`));
+  }
+
+  const wiersz = (p: ProduktSzansy): HTMLElement => {
+    const w = el("div", "crm-tecs-poz");
+    const gora = el("div", "crm-tecs-poz-gora");
+    gora.appendChild(poleIk("crm-tecs-poz-nazwa", "licencja", p.produkt || "(bez produktu)", p.produkt));
+    gora.appendChild(el("span", "crm-tecs-poz-suma", euro(p.suma)));
+    w.appendChild(gora);
+    w.appendChild(el("div", "crm-tecs-poz-linia",
+      `${p.ile} szt. · ${opisTypuProduktu(p)}${p.rabat ? ` · rabat ${p.rabat}%` : ""}`));
+    const kwoty = [
+      p.paidUp ? `Paid-up ${euro(p.paidUp)}` : "",
+      p.tecs ? `TECS ${euro(p.tecs)}` : "",
+      p.lease ? `Lease ${euro(p.lease)}` : "",
+      p.aec + p.alh ? `AEC/ALH ${euro(p.aec + p.alh)}` : "",
+    ].filter(Boolean).join(" · ");
+    if (kwoty) w.appendChild(el("div", "crm-tecs-poz-linia crm-tecs-poz-ceny", `${kwoty} (za licencję)`));
+
+    if (!edycja) return w;
+    const akcje = el("div", "crm-tecs-poz-akcje");
+    w.appendChild(akcje);
+    const edytuj = el("button", "crm-usun crm-edytuj") as HTMLButtonElement;
+    edytuj.appendChild(ikona("pioro"));
+    edytuj.title = "Edytuj produkt";
+    akcje.appendChild(edytuj);
+    edytuj.onclick = () => {
+      const forma = formularzProduktuSzansy(o, c, ceny, progi, p, (nowy) => {
+        Object.assign(p, nowy);
+        ok(`Zapisano ${p.produkt}. Pamiętaj o „Przelicz wartość”.`);
+        rysuj();
+      }, () => forma.replaceWith(w));
+      w.replaceWith(forma);
+    };
+
+    const kosz = el("button", "crm-usun") as HTMLButtonElement;
+    kosz.appendChild(ikona("kosz"));
+    kosz.title = "Usuń produkt";
+    akcje.appendChild(kosz);
+    kosz.onclick = () => {
+      const pyt = el("div", "crm-zal-potwierdz");
+      pyt.appendChild(el("span", undefined, `Usunąć ${p.produkt}?`));
+      const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+      const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+      pyt.append(tak, nie);
+      w.appendChild(pyt);
+      kosz.disabled = true;
+      nie.onclick = () => {
+        pyt.remove();
+        kosz.disabled = false;
+      };
+      tak.onclick = async () => {
+        tak.disabled = nie.disabled = true;
+        try {
+          await deleteListItem("Oferty", p.id);
+          pozycje = pozycje.filter((x) => x !== p);
+          ok(`Usunięto ${p.produkt}. Pamiętaj o „Przelicz wartość”.`);
+          rysuj();
+        } catch (e) {
+          pyt.remove();
+          kosz.disabled = false;
+          blad(e);
+        }
+      };
+    };
+    return w;
+  };
+
+  const rysuj = () => {
+    lista.innerHTML = "";
+    if (!pozycje.length) {
+      pusto(lista, edycja ? "Brak produktów — dodaj pierwszy przyciskiem „Dodaj produkt”." : "Brak produktów.");
+    }
+    pozycje.forEach((p) => lista.appendChild(wiersz(p)));
+    rysujStopke();
+  };
+
+  const rysujStopke = () => {
+    stopka.innerHTML = "";
+    const razem = r2(pozycje.reduce((a, p) => a + (p.suma || 0), 0));
+    const zgodne = Math.round(razem) === Math.round(o.wartosc || 0);
+    const kol = (etykieta: string, wartosc: string, klasa = "") => {
+      const k = el("div", "crm-tecs-stopka-kol");
+      k.append(el("div", "crm-tecs-stopka-et", etykieta), el("div", `crm-tecs-stopka-war ${klasa}`.trim(), wartosc));
+      return k;
+    };
+    stopka.append(
+      kol("Suma pozycji", euro(razem)),
+      kol("Wartość oppsa w systemie", euro(o.wartosc || 0), zgodne ? "crm-ok" : "crm-nf-uwaga")
+    );
+    if (!zgodne) {
+      stopka.appendChild(el("div", "crm-nowe-info crm-tecs-legenda",
+        "Pomarańczowa wartość = suma pozycji różni się od wartości oppsa. Kliknij „Przelicz wartość”."));
+    }
+    if (!edycja) return;
+    const przelicz = przyciskIk("crm-btn crm-btn-cichy", "kalkulator", "Przelicz wartość");
+    przelicz.disabled = zgodne;
+    przelicz.title = zgodne ? "Wartość zgodna z sumą pozycji" : "Zapisz sumę pozycji jako wartość oppsa";
+    przelicz.onclick = async () => {
+      przelicz.disabled = true;
+      try {
+        const nowa = await zapiszSzanse(o, { "Warto_x015b__x0107_wEUR": razem });
+        Object.assign(o, nowa);
+        nowaWartosc(nowa);
+        ok(`Przeliczono wartość oppsa: ${euro(razem)}`);
+        rysujStopke();
+      } catch (e) {
+        blad(e);
+        przelicz.disabled = false;
+      }
+    };
+    stopka.appendChild(przelicz);
+  };
+
+  rysuj();
+}
+
+/** Nowy produkt / edycja produktu szansy - odpowiednik dsFormOferta z Power Apps. */
+function formularzProduktuSzansy(
+  o: Szansa,
+  c: Company,
+  ceny: Map<string, CenaTecs>,
+  progi: ProgRabatu[],
+  p: ProduktSzansy | null,
+  poZapisie: (nowy: ProduktSzansy) => void,
+  anuluj: () => void
+): HTMLElement {
+  const box = el("div", "crm-nowe crm-demo crm-tecs-forma");
+  box.appendChild(poleIk("crm-demo-tytul", "paczka", p ? "Edycja produktu" : "Nowy produkt w ofercie"));
+  box.appendChild(el("div", "crm-nowe-info", `${o.firma || c.nazwa} — ${o.nazwa}`));
+
+  // --- produkt z cennika (wyszukiwanie po Title) ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Produkt z cennika"));
+  const produkt = document.createElement("input");
+  produkt.type = "text";
+  produkt.className = "crm-input";
+  produkt.placeholder = "Wyszukaj licencję w cenniku…";
+  const lista = document.createElement("datalist");
+  lista.id = `cennik-${nowyGuid()}`;
+  const tytuly = new Map<string, CenaTecs>();
+  ceny.forEach((v) => v.tytul && tytuly.set(v.tytul, v));
+  [...tytuly.keys()].sort((a, b) => a.localeCompare(b, "pl")).forEach((k) => {
+    const opt = document.createElement("option");
+    opt.value = k;
+    lista.appendChild(opt);
+  });
+  produkt.setAttribute("list", lista.id);
+  produkt.value = p?.produkt ?? "";
+  box.append(produkt, lista);
+
+  // --- rodzaj: domyslnie z TypBiznesu szansy ---
+  box.appendChild(el("div", "crm-nf-sekcja", "Rodzaj"));
+  let typ: ProduktSzansy["typ"] = p?.typ ||
+    (o.typ === "Lease" ? "L" : o.typ === "AEC" ? "AEC" : o.typ === "ALH" ? "ALH" : "PU");
+  chipyWyboru(box, TYPY_PRODUKTU_SZANSY, typ, (v) => {
+    typ = v;
+    dniBox.style.display = v === "L" ? "" : "none";
+    przelicz();
+  });
+
+  const rzad = el("div", "crm-demo-okres");
+  box.appendChild(rzad);
+  const kol = (etykieta: string, wartosc: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "text";
+    i.inputMode = "decimal";
+    i.className = "crm-input";
+    i.value = wartosc;
+    k.appendChild(i);
+    rzad.appendChild(k);
+    return i;
+  };
+  const ilosc = kol("Liczba licencji *", String(p?.ile ?? 1));
+  const rabat = kol("Rabat %", String(p?.rabat ?? 0));
+  // rabat podpowiadany z progow, dopoki ktos go recznie nie zmieni (jak Default w Power Apps)
+  let rabatReczny = !!p;
+  const dniBox = el("div");
+  box.appendChild(dniBox);
+  const dni = poleFormularza(dniBox, "Dni dzierżawy");
+  dni.inputMode = "numeric";
+  dni.value = String(p && p.dni > 0 ? p.dni : 30);
+  dniBox.style.display = typ === "L" ? "" : "none";
+
+  const podglad = el("div", "crm-tecs-podglad crm-sz-podglad");
+  box.appendChild(podglad);
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", "Zapisz") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const akcje = el("div", "crm-akcje");
+  akcje.append(zapisz, wstecz, komunikat);
+  box.appendChild(akcje);
+  wstecz.onclick = anuluj;
+
+  const num = (i: HTMLInputElement) => {
+    const v = Number(i.value.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(v) ? v : 0;
+  };
+  const cenaProduktu = () => ceny.get(produkt.value.trim());
+
+  let wynik = wyliczProduktSzansy(undefined, typ, 0, 0, 0);
+  function przelicz() {
+    const cena = cenaProduktu();
+    if (!rabatReczny) rabat.value = String(rabatZProgow(progi, cena?.schemat ?? "", num(ilosc)));
+    wynik = wyliczProduktSzansy(cena, typ, num(ilosc), num(rabat), num(dni));
+    podglad.innerHTML = "";
+    const linia = (etykieta: string, wartosc: string, klasa = "") => {
+      const r = el("div", `crm-tecs-podglad-rzad ${klasa}`.trim());
+      r.append(el("span", undefined, etykieta), el("span", undefined, wartosc));
+      podglad.appendChild(r);
+    };
+    if (produkt.value.trim() && !cena) linia("Brak produktu w cenniku", "ceny 0 €", "crm-nf-uwaga");
+    linia("Cennik: Paid-Up / TECS / Annual Lease",
+      `${euro(cena?.paidUp ?? 0)} / ${euro(cena?.tecs ?? 0)} / ${euro(cena?.lease ?? 0)}`);
+    linia("Paid-up (za licencję)", euro(wynik.paidUp));
+    linia("TECS (za licencję)", euro(wynik.tecs));
+    linia("Lease (za licencję, okres)", euro(wynik.lease));
+    linia("AEC / ALH (za licencję)", euro(wynik.aec + wynik.alh));
+    linia("Suma pozycji", euro(wynik.suma), "crm-tecs-podglad-suma");
+    sprawdz();
+  }
+  function sprawdz(): boolean {
+    const okForm = !!produkt.value.trim() && num(ilosc) > 0;
+    zapisz.disabled = !okForm;
+    brakujace.textContent = okForm ? "" : "Wybierz produkt i podaj liczbę licencji";
+    brakujace.style.display = okForm ? "none" : "block";
+    return okForm;
+  }
+  produkt.oninput = przelicz;
+  ilosc.oninput = przelicz;
+  dni.oninput = przelicz;
+  rabat.oninput = () => {
+    rabatReczny = true;
+    przelicz();
+  };
+  przelicz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = wstecz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    const pola: Record<string, unknown> = {
+      PaidUP0: typ === "PU",
+      LeaseDays: typ === "L",
+      AECYN: typ === "AEC",
+      ALHYN: typ === "ALH",
+      Liczba_licencji: num(ilosc),
+      Paidup: wynik.paidUp,
+      TECS: wynik.tecs,
+      Lease: wynik.lease,
+      Lease_Days: typ === "L" ? num(dni) : 0,
+      Suma: wynik.suma,
+      ProductID: produkt.value.trim(),
+      ALH: wynik.alh,
+      AEC: wynik.aec,
+      Rabat: num(rabat),
+      FirmaID: o.firma || c.nazwa,
+      SzansaID: o.nazwa,
+      IdentyfikatorCompanies: o.companyGuid || c.guid,
+      IdentyfikatorOpps: o.guid,
+    };
+    try {
+      const it = p
+        ? { id: p.id, fields: { ...(await updateTicketFields(p.id, pola, p.etag || undefined, "Oferty")), id: p.id } }
+        : await createListItem("Oferty", pola);
+      poZapisie(toProduktSzansy(it as ListItem));
+    } catch (e: any) {
+      komunikat.textContent = `Nie udało się zapisać: ${e?.message ?? e}`;
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = wstecz.disabled = false;
+    }
+  };
+  return box;
+}
+
 async function zakladkaSzanse(
   box: HTMLElement,
   s: HTMLElement,
   c: Company,
-  odswiezWidok: () => void = () => void pokazFirma(c)
+  odswiezWidok: () => void = () => void pokazFirma(c),
+  zPrzyciskiem = false // widok maila nie ma paska firmy - przycisk nad lista
 ) {
+  // "Nowy Opps Soft" - z paska firmy albo przyciskiem nad lista; formularz nad lista
+  const miejsce = el("div");
+  box.appendChild(miejsce);
+  const nowyBtn = przyciskIk("crm-btn crm-tecs-nowy crm-nowa-szansa", "nowaSzansa", "Nowy Opps Soft");
+  const otworzForm = () => {
+    miejsce.innerHTML = "";
+    void formularzNowejSzansy(miejsce, c, () => {
+      szanseZamkniete = false;
+      odswiezWidok();
+    }, () => {
+      miejsce.innerHTML = "";
+      if (zPrzyciskiem) miejsce.appendChild(nowyBtn);
+    });
+  };
+  nowyBtn.onclick = otworzForm;
+  if (otworzNowaSzanse) {
+    otworzNowaSzanse = false;
+    otworzForm();
+  } else if (zPrzyciskiem) miejsce.appendChild(nowyBtn);
+
   segment(box, ["Aktywne", "Zamknięte"], szanseZamkniete ? "Zamknięte" : "Aktywne", (v) => {
     szanseZamkniete = v === "Zamknięte";
     odswiezWidok();
@@ -4550,8 +5757,15 @@ async function zakladkaSzanse(
   const ja = getMojaNazwa().then((n) => n.trim().toLowerCase(), () => "");
 
   const items = await getByCompany("Opps", c.guid, { top: 100 });
-  const lista = items
-    .map(toSzansa)
+  const szanse = items.map(toSzansa);
+  if (autoSzanse) {
+    autoSzanse = false;
+    if (!szanseZamkniete && !szanse.some((o) => o.status === "Aktywny")) {
+      szanseZamkniete = true;
+      zaznaczSegment(box, "Zamknięte");
+    }
+  }
+  const lista = szanse
     .filter((o) => (szanseZamkniete ? o.status.startsWith("Zamknięty") : o.status === "Aktywny"));
 
   s.textContent = `Szanse — ${lista.length}`;
@@ -4810,6 +6024,22 @@ function panelSzansy(o: Szansa, c: Company, zmieniona: (nowa: Szansa) => void): 
     }
   };
 
+  // --- edycja danych - tylko aktywna szansa ---
+  if (o.status === "Aktywny") {
+    const edytuj = przyciskIk("crm-btn crm-btn-cichy crm-szansa-edytuj", "pioro", "Edytuj dane szansy");
+    const edycjaBox = el("div");
+    box.append(edytuj, edycjaBox);
+    edytuj.onclick = () => {
+      edytuj.hidden = true;
+      void formularzNowejSzansy(edycjaBox, c, (nowa) => {
+        if (nowa) zmieniona(nowa);
+      }, () => {
+        edycjaBox.innerHTML = "";
+        edytuj.hidden = false;
+      }, o);
+    };
+  }
+
   // --- status ---
   box.appendChild(el("div", "crm-nf-sekcja", "Status"));
   const statusy = el("div", "crm-szansa-statusy");
@@ -4882,7 +6112,7 @@ function panelSzansy(o: Szansa, c: Company, zmieniona: (nowa: Szansa) => void): 
         zakladkaFirmy = "TECS";
         tecsTryb = "Bieżące";
         otworzNowyTecs = true;
-        await pokazFirma(c);
+        await odswiezTecs(c);
       } catch (e: any) {
         komunikat.textContent = e?.message ?? String(e);
         komunikat.className = "crm-komunikat crm-blad";
@@ -4988,7 +6218,8 @@ function kartaSzansy(
   k.appendChild(gora);
 
   const rzad = el("div", "crm-kafel-rzad");
-  rzad.appendChild(poleIk("crm-kafel-wartosc", "euro", euro(o.wartosc), "Wartość"));
+  const wartoscEl = poleIk("crm-kafel-wartosc", "euro", euro(o.wartosc), "Wartość");
+  rzad.appendChild(wartoscEl);
   if (o.typ) rzad.appendChild(pastylka(o.typ, "#2F6FD6", "#E8F0FD", "teczka"));
   k.appendChild(rzad);
 
@@ -5007,13 +6238,48 @@ function kartaSzansy(
     }
   }
   k.appendChild(poleIk("crm-kafel-meta", "kalendarz", `Otwarta ${dataPL(o.otwarcie)}`, "Data otwarcia"));
+  // zamkniecie: wygrana - data wygranej, aktywna - spodziewane zamkniecie z liczba dni
+  const pz = o.pola as Record<string, unknown>;
+  const wygrana = String(pz.ClosedDateWin ?? "");
+  const spodziewane = String(pz["Spodziewanezamkni_x0119_cie"] ?? "");
+  if (o.status === "Zamknięty wygrany" && wygrana) {
+    k.appendChild(poleIk("crm-kafel-meta", "flaga", `Zamknięta ${dataPL(wygrana)}`, "Data wygranej"));
+  } else if (spodziewane) {
+    const d = dniDo(spodziewane);
+    const zam = poleIk("crm-kafel-meta", "klepsydra",
+      `Zamknięcie ${dataPL(spodziewane)}` +
+        (o.status === "Aktywny" && d !== null ? ` · ${d < 0 ? "po terminie" : `za ${d} ${d === 1 ? "dzień" : "dni"}`}` : ""),
+      "Spodziewane zamknięcie");
+    if (o.status === "Aktywny") zam.style.color = kolorTerminu(d);
+    k.appendChild(zam);
+  }
 
-  const akcje = el("div", "crm-akcje crm-szansa-akcje");
+  const akcje = el("div", "crm-akcje crm-szansa-akcje crm-karta-akcje");
   k.appendChild(akcje);
   const btnPanel = przyciskIk("crm-btn crm-btn-cichy", "flaga", "Status i etap");
   akcje.appendChild(btnPanel);
   const panelBox = el("div");
   k.appendChild(panelBox);
+
+  // produkty i ceny (lista Oferty) - bez OPPSGUID nie da sie ich powiazac
+  if (o.guid) {
+    const btnProd = przyciskIk("crm-btn crm-btn-cichy", "paczka", "Produkty");
+    akcje.appendChild(btnProd);
+    const prodBox = el("div");
+    k.appendChild(prodBox);
+    btnProd.onclick = () => {
+      if (prodBox.childElementCount) {
+        prodBox.innerHTML = "";
+        btnProd.classList.remove("crm-btn-wcisniety");
+        return;
+      }
+      btnProd.classList.add("crm-btn-wcisniety");
+      void produktySzansy(prodBox, o, c, (nowa) => {
+        const w = wartoscEl.querySelector(".crm-ikona-txt");
+        if (w) w.textContent = euro(nowa.wartosc);
+      });
+    };
+  }
 
   // po zapisie karta rysowana od nowa (kolor, status, etap) z otwartym panelem
   const pokazPanel = () => {
@@ -5029,10 +6295,628 @@ function kartaSzansy(
   if (panelOtwarty) pokazPanel();
 
   // notatki szansy - bez OPPSGUID nie da sie ich powiazac
-  if (!o.guid) return k;
+  if (o.guid) sekcjaNotatek(k, akcje, o, c, notatki, ja, "Brak notatek do tej szansy.");
+  if (o.id) sekcjaZalacznikow(k, akcje, "Opps", o.id, folderFirmy(c));
+  przyciskGenerujOferte(akcje);
+  return k;
+}
 
+// ---------------------------------------------------------------- zalaczniki szansy / TECS-u
+
+const MAX_ZALACZNIK = 50 * 1024 * 1024;
+
+/** Plik z otwartego maila jako bajty - Mailbox 1.8, tylko zalaczniki-pliki. */
+function bajtyZalacznikaMaila(id: string): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const item = Office.context.mailbox.item as Office.MessageRead;
+    item.getAttachmentContentAsync(id, (r) => {
+      if (r.status !== Office.AsyncResultStatus.Succeeded) return reject(new Error(r.error?.message ?? "nie pobrano"));
+      if (r.value.format !== Office.MailboxEnums.AttachmentContentFormat.Base64) {
+        return reject(new Error("to nie jest plik"));
+      }
+      const bin = atob(r.value.content);
+      const bajty = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bajty[i] = bin.charCodeAt(i);
+      resolve(bajty.buffer);
+    });
+  });
+}
+
+type DoWyslania = { nazwa: string; tresc: () => Promise<ArrayBuffer>; rozmiar: number };
+
+/**
+ * Pole "upusc pliki albo kliknij" + zalaczniki otwartego maila jako przyciski.
+ * Zalacznikow maila nie da sie przeciagnac - Outlook nie oddaje ich dodatkowi jako plikow.
+ */
+function polePrzesylania(
+  wyslij: (pliki: DoWyslania[]) => Promise<void>,
+  komunikat: HTMLElement,
+  tytulMaila: string
+): [HTMLElement, HTMLElement] {
+  const strefa = el("label", "crm-zal-strefa") as HTMLLabelElement;
+  const wybor = document.createElement("input");
+  wybor.type = "file";
+  wybor.multiple = true;
+  wybor.hidden = true;
+  strefa.append(ikona("wyslij"), el("span", undefined, "Upuść pliki tutaj albo kliknij, aby wybrać"), wybor);
+
+  const zPlikow = (lista: FileList | null) =>
+    void wyslij(Array.from(lista ?? []).map((f) => ({ nazwa: f.name, tresc: () => f.arrayBuffer(), rozmiar: f.size })));
+  wybor.onchange = () => {
+    zPlikow(wybor.files);
+    wybor.value = "";
+  };
+  strefa.ondragover = (e) => {
+    e.preventDefault();
+    strefa.classList.add("crm-zal-nad");
+  };
+  strefa.ondragleave = () => strefa.classList.remove("crm-zal-nad");
+  strefa.ondrop = (e) => {
+    e.preventDefault();
+    strefa.classList.remove("crm-zal-nad");
+    if (!e.dataTransfer?.files.length) {
+      komunikat.textContent = "Tu można upuścić pliki z dysku. Załączniki maila dodasz przyciskami poniżej.";
+      komunikat.className = "crm-komunikat";
+      return;
+    }
+    zPlikow(e.dataTransfer.files);
+  };
+
+  const zMaila = el("div", "crm-zal-mail");
+  const item = Office.context.mailbox.item as Office.MessageRead | undefined;
+  const plikiMaila = (item?.attachments ?? []).filter(
+    (a) => a.attachmentType === Office.MailboxEnums.AttachmentType.File && !a.isInline
+  );
+  if (plikiMaila.length && Office.context.requirements.isSetSupported("Mailbox", "1.8")) {
+    zMaila.appendChild(el("div", "crm-label", "Z otwartego maila"));
+    plikiMaila.forEach((a) => {
+      const b = przyciskIk("crm-chip-wybor crm-zal-chip", "spinacz", a.name);
+      b.title = tytulMaila;
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await wyslij([{ nazwa: a.name, tresc: () => bajtyZalacznikaMaila(a.id), rozmiar: a.size }]);
+        } finally {
+          b.disabled = false;
+        }
+      };
+      zMaila.appendChild(b);
+    });
+  }
+  return [strefa, zMaila];
+}
+
+/** Rozmiar pliku po ludzku. */
+const rozmiarPL = (b: number) =>
+  b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} MB`;
+
+// podfolder otwarty w zakladce Dokumenty - wzgledem folderu firmy
+let dokSciezka: { firma: string; podfolder: string[] } = { firma: "", podfolder: [] };
+const KATALOG_KLIENTOW = "DokumentyKlienci";
+const MAX_PLIK_DOK = 250 * 1024 * 1024;
+
+/** Folder firmy w SharePoint (Shared Documents/DokumentyKlienci/<firma>) w dodatku. */
+async function zakladkaDokumenty(box: HTMLElement, s: HTMLElement, c: Company) {
+  const firma = (firmaPelna?.guid === c.guid ? firmaPelna.skrocona : "") || c.nazwa;
+  if (dokSciezka.firma !== c.guid) dokSciezka = { firma: c.guid, podfolder: [] };
+  const glowny = `${KATALOG_KLIENTOW}/${firma}`;
+  const sciezka = [glowny, ...dokSciezka.podfolder].join("/");
+  const odswiez = () => void pokazFirma(c);
+
+  // --- okruszki: firma / podfolder / ... + Otworz w SharePoint ---
+  const gora = el("div", "crm-dok-gora");
+  const okruszki = el("div", "crm-dok-okruszki");
+  [firma, ...dokSciezka.podfolder].forEach((n, i, wsz) => {
+    if (i) okruszki.appendChild(el("span", "crm-dok-sep", "/"));
+    const b = el("button", i === wsz.length - 1 ? "crm-dok-okr crm-dok-okr-akt" : "crm-dok-okr", n) as HTMLButtonElement;
+    b.onclick = () => {
+      dokSciezka.podfolder = dokSciezka.podfolder.slice(0, i);
+      odswiez();
+    };
+    okruszki.appendChild(b);
+  });
+  const wSP = przyciskIk("crm-btn crm-btn-cichy", "folder", "Otwórz w SharePoint");
+  gora.append(okruszki, wSP);
+  box.appendChild(gora);
+  wSP.onclick = async () => {
+    const url = await getUrlFolderu(sciezka).catch(() => null);
+    window.open(url ?? `https://mescocompl.sharepoint.com/sites/CRMSystemPOC/Shared%20Documents/${KATALOG_KLIENTOW}/` +
+      encodeURIComponent(firma), "_blank");
+  };
+
+  const komunikat = el("div", "crm-komunikat");
+  const pliki = await getPlikiFolderu(sciezka);
+
+  // --- brak folderu firmy ---
+  if (pliki === null) {
+    s.textContent = "Dokumenty";
+    if (dokSciezka.podfolder.length) {
+      dokSciezka.podfolder = [];
+      return odswiez();
+    }
+    pusto(box, `Firma nie ma jeszcze folderu „${firma}” w ${KATALOG_KLIENTOW}.`);
+    const utworz = przyciskIk("crm-btn", "folder", "Utwórz folder");
+    box.append(utworz, komunikat);
+    utworz.onclick = async () => {
+      utworz.disabled = true;
+      try {
+        await utworzFolder(KATALOG_KLIENTOW, firma);
+        odswiez();
+      } catch (e: any) {
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+        utworz.disabled = false;
+      }
+    };
+    return;
+  }
+
+  // foldery najpierw, potem pliki od najnowszych
+  pliki.sort((a, b) => Number(b.folder) - Number(a.folder) ||
+    (a.folder ? a.nazwa.localeCompare(b.nazwa, "pl") : b.zmieniony.localeCompare(a.zmieniony)));
+  s.textContent = `Dokumenty — ${pliki.length}`;
+
+  async function wyslij(doWyslania: DoWyslania[]) {
+    let ok = 0;
+    const bledy: string[] = [];
+    for (const p of doWyslania) {
+      komunikat.className = "crm-komunikat";
+      komunikat.textContent = `Wysyłanie: ${p.nazwa}...`;
+      try {
+        if (p.rozmiar > MAX_PLIK_DOK) throw new Error("plik większy niż 250 MB");
+        if (pliki!.some((z) => z.nazwa.toLowerCase() === p.nazwa.toLowerCase())) throw new Error("plik o tej nazwie już jest");
+        await wyslijPlik(sciezka, p.nazwa, await p.tresc());
+        ok++;
+      } catch (e: any) {
+        bledy.push(`${p.nazwa}: ${e?.message ?? e}`);
+      }
+    }
+    if (!bledy.length) return odswiez();
+    komunikat.textContent = [ok ? `Zapisano: ${ok}` : "", ...bledy].filter(Boolean).join(" · ");
+    komunikat.className = "crm-komunikat crm-blad";
+    if (ok) setTimeout(odswiez, 2500);
+  }
+  const [strefa, zMaila] = polePrzesylania(wyslij, komunikat, "Zapisz ten załącznik w folderze firmy");
+  box.append(strefa, zMaila, komunikat);
+
+  // --- nowy podfolder ---
+  const nowyRzad = el("div", "crm-dok-nowy");
+  const nowyBtn = przyciskIk("crm-btn crm-btn-cichy", "folder", "Nowy folder");
+  nowyRzad.appendChild(nowyBtn);
+  box.appendChild(nowyRzad);
+  nowyBtn.onclick = () => {
+    nowyBtn.style.display = "none";
+    const pole = document.createElement("input");
+    pole.className = "crm-input";
+    pole.placeholder = "nazwa folderu";
+    const ok = el("button", "crm-btn", "Utwórz") as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    nowyRzad.append(pole, ok, nie);
+    pole.focus();
+    nie.onclick = odswiez;
+    ok.onclick = async () => {
+      if (!pole.value.trim()) return;
+      ok.disabled = true;
+      try {
+        await utworzFolder(sciezka, pole.value.trim());
+        odswiez();
+      } catch (e: any) {
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+        ok.disabled = false;
+      }
+    };
+  };
+
+  // --- lista ---
+  const lista = el("div", "crm-dok-lista");
+  box.appendChild(lista);
+  if (dokSciezka.podfolder.length) {
+    const wyzej = el("button", "crm-dok-wiersz crm-dok-wyzej") as HTMLButtonElement;
+    wyzej.append(ikona("folder"), el("span", "crm-dok-nazwa", ".. (wyżej)"));
+    wyzej.onclick = () => {
+      dokSciezka.podfolder.pop();
+      odswiez();
+    };
+    lista.appendChild(wyzej);
+  }
+  if (!pliki.length) pusto(lista, "Folder jest pusty.");
+
+  pliki.forEach((p) => {
+    const wiersz = el("div", "crm-dok-pozycja");
+    const otworz = (p.folder ? el("button", "crm-dok-wiersz") : document.createElement("a")) as HTMLElement;
+    if (!p.folder) {
+      otworz.className = "crm-dok-wiersz";
+      const a = otworz as HTMLAnchorElement;
+      a.href = p.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.title = "Otwórz";
+    } else {
+      otworz.onclick = () => {
+        dokSciezka.podfolder.push(p.nazwa);
+        odswiez();
+      };
+    }
+    const opis = el("span", "crm-dok-opis");
+    opis.append(
+      el("span", "crm-dok-nazwa", p.nazwa),
+      el("span", "crm-dok-meta", [
+        p.zmieniony ? new Date(p.zmieniony).toLocaleDateString("pl-PL") : "",
+        p.folder ? "" : rozmiarPL(p.rozmiar),
+        p.kto,
+      ].filter(Boolean).join(" · "))
+    );
+    otworz.append(ikona(p.folder ? "folder" : "dokument"), opis);
+    if (p.folder) otworz.classList.add("crm-dok-folder");
+
+    const kosz = el("button", "crm-zal-kosz") as HTMLButtonElement;
+    kosz.title = p.folder ? "Usuń folder" : "Usuń plik";
+    kosz.appendChild(ikona("kosz"));
+    wiersz.append(otworz, kosz);
+    lista.appendChild(wiersz);
+
+    kosz.onclick = () => {
+      kosz.disabled = true;
+      const pyt = el("div", "crm-zal-potwierdz");
+      pyt.appendChild(el("span", undefined, p.folder
+        ? `Usunąć folder „${p.nazwa}” razem z zawartością?`
+        : `Usunąć „${p.nazwa}”?`));
+      const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+      const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+      pyt.append(tak, nie);
+      wiersz.after(pyt);
+      nie.onclick = () => {
+        pyt.remove();
+        kosz.disabled = false;
+      };
+      tak.onclick = async () => {
+        tak.disabled = nie.disabled = true;
+        try {
+          await usunPlik(p.id);
+          odswiez();
+        } catch (e: any) {
+          pyt.remove();
+          kosz.disabled = false;
+          komunikat.textContent = e?.message ?? String(e);
+          komunikat.className = "crm-komunikat crm-blad";
+        }
+      };
+    };
+  });
+}
+
+/** Nazwa folderu firmy w DokumentyKlienci - skrocona nazwa, jak w zakladce Dokumenty. */
+const folderFirmy = (c: Company) => (firmaPelna?.guid === c.guid ? firmaPelna.skrocona : "") || c.nazwa;
+
+/** Wolna nazwa w folderze: "oferta.pdf" -> "oferta (1).pdf", gdy pierwsza jest zajeta. */
+function wolnaNazwa(nazwa: string, zajete: string[]): string {
+  const male = new Set(zajete.map((z) => z.toLowerCase()));
+  if (!male.has(nazwa.toLowerCase())) return nazwa;
+  const kropka = nazwa.lastIndexOf(".");
+  const [rdzen, rozsz] = kropka > 0 ? [nazwa.slice(0, kropka), nazwa.slice(kropka)] : [nazwa, ""];
+  for (let i = 1; ; i++) {
+    const kandydat = `${rdzen} (${i})${rozsz}`;
+    if (!male.has(kandydat.toLowerCase())) return kandydat;
+  }
+}
+
+/**
+ * Wybor folderu w DokumentyKlienci/<firma> - podfoldery, nowy folder, "Kopiuj tutaj" / "Przenies tutaj".
+ * cel() dostaje sciezke folderu i nazwy plikow, ktore juz w nim sa.
+ */
+function wyborFolderu(
+  miejsce: HTMLElement,
+  firma: string,
+  cel: (sciezka: string, zajete: string[], przenies: boolean) => Promise<void>,
+  zamknij: () => void
+) {
+  const box = el("div", "crm-nowe crm-wybor-folderu");
+  miejsce.appendChild(box);
+  const glowny = `${KATALOG_KLIENTOW}/${firma}`;
+  let podfolder: string[] = [];
+
+  const rysuj = async () => {
+    box.innerHTML = "";
+    box.appendChild(poleIk("crm-demo-tytul", "folder", "Kopiuj do Dokumentów"));
+    const okruszki = el("div", "crm-dok-okruszki");
+    [firma, ...podfolder].forEach((n, i, wsz) => {
+      if (i) okruszki.appendChild(el("span", "crm-dok-sep", "/"));
+      const b = el("button", i === wsz.length - 1 ? "crm-dok-okr crm-dok-okr-akt" : "crm-dok-okr", n) as HTMLButtonElement;
+      b.onclick = () => {
+        podfolder = podfolder.slice(0, i);
+        void rysuj();
+      };
+      okruszki.appendChild(b);
+    });
+    box.appendChild(okruszki);
+    const komunikat = el("div", "crm-komunikat", "Wczytywanie folderu...");
+    box.appendChild(komunikat);
+    const anuluj = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    anuluj.onclick = zamknij;
+
+    const sciezka = [glowny, ...podfolder].join("/");
+    let pliki: Awaited<ReturnType<typeof getPlikiFolderu>>;
+    try {
+      pliki = await getPlikiFolderu(sciezka);
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+      box.appendChild(anuluj);
+      return;
+    }
+    komunikat.textContent = "";
+
+    // firma bez folderu - propozycja utworzenia
+    if (pliki === null) {
+      komunikat.textContent = `Firma nie ma jeszcze folderu „${firma}” w ${KATALOG_KLIENTOW}.`;
+      const utworz = przyciskIk("crm-btn", "folder", "Utwórz folder");
+      const rzad = el("div", "crm-akcje");
+      rzad.append(utworz, anuluj);
+      box.appendChild(rzad);
+      utworz.onclick = async () => {
+        utworz.disabled = true;
+        try {
+          await utworzFolder(KATALOG_KLIENTOW, firma);
+          void rysuj();
+        } catch (e: any) {
+          komunikat.textContent = e?.message ?? String(e);
+          komunikat.className = "crm-komunikat crm-blad";
+          utworz.disabled = false;
+        }
+      };
+      return;
+    }
+
+    const lista = el("div", "crm-dok-lista");
+    box.appendChild(lista);
+    if (podfolder.length) {
+      const wyzej = el("button", "crm-dok-wiersz crm-dok-wyzej") as HTMLButtonElement;
+      wyzej.append(ikona("folder"), el("span", "crm-dok-nazwa", ".. (wyżej)"));
+      wyzej.onclick = () => {
+        podfolder.pop();
+        void rysuj();
+      };
+      lista.appendChild(wyzej);
+    }
+    const foldery = pliki.filter((p) => p.folder).sort((a, b) => a.nazwa.localeCompare(b.nazwa, "pl"));
+    if (!foldery.length && !podfolder.length) lista.appendChild(el("div", "crm-pusto", "Brak podfolderów."));
+    foldery.forEach((f) => {
+      const b = el("button", "crm-dok-wiersz crm-dok-folder") as HTMLButtonElement;
+      b.append(ikona("folder"), el("span", "crm-dok-nazwa", f.nazwa));
+      b.onclick = () => {
+        podfolder.push(f.nazwa);
+        void rysuj();
+      };
+      lista.appendChild(b);
+    });
+
+    // akcje w dwoch rzedach: kopiuj / przenies, pod spodem nowy folder / anuluj
+    const kopiujBtn = przyciskIk("crm-btn", "kopiuj", "Kopiuj tutaj");
+    const przeniesBtn = przyciskIk("crm-btn", "wyslij", "Przenieś tutaj");
+    przeniesBtn.title = "Skopiuj do tego folderu i usuń z załączników";
+    const rzad = el("div", "crm-wybor-akcje");
+    rzad.append(kopiujBtn, przeniesBtn);
+    box.appendChild(rzad);
+
+    const nowyRzad = el("div", "crm-wybor-akcje");
+    const nowyBtn = przyciskIk("crm-btn crm-btn-cichy", "folder", "Nowy folder");
+    nowyRzad.append(nowyBtn, anuluj);
+    box.appendChild(nowyRzad);
+    const nowyPole = el("div", "crm-dok-nowy");
+    box.appendChild(nowyPole);
+    nowyBtn.onclick = () => {
+      nowyBtn.disabled = true;
+      const pole = document.createElement("input");
+      pole.className = "crm-input";
+      pole.placeholder = "nazwa folderu";
+      const ok = el("button", "crm-btn", "Utwórz") as HTMLButtonElement;
+      nowyPole.append(pole, ok);
+      pole.focus();
+      ok.onclick = async () => {
+        if (!pole.value.trim()) return;
+        ok.disabled = true;
+        try {
+          await utworzFolder(sciezka, pole.value.trim());
+          podfolder.push(pole.value.trim());
+          void rysuj();
+        } catch (e: any) {
+          komunikat.textContent = e?.message ?? String(e);
+          komunikat.className = "crm-komunikat crm-blad";
+          ok.disabled = false;
+        }
+      };
+    };
+
+    const zajete = pliki.filter((p) => !p.folder).map((p) => p.nazwa);
+    const wykonaj = async (przenies: boolean) => {
+      kopiujBtn.disabled = przeniesBtn.disabled = anuluj.disabled = nowyBtn.disabled = true;
+      komunikat.className = "crm-komunikat";
+      komunikat.textContent = przenies ? "Przenoszenie..." : "Kopiowanie...";
+      try {
+        await cel(sciezka, zajete, przenies);
+      } catch (e: any) {
+        komunikat.textContent = e?.message ?? String(e);
+        komunikat.className = "crm-komunikat crm-blad";
+        kopiujBtn.disabled = przeniesBtn.disabled = anuluj.disabled = nowyBtn.disabled = false;
+      }
+    };
+    kopiujBtn.onclick = () => void wykonaj(false);
+    przeniesBtn.onclick = () => void wykonaj(true);
+  };
+  void rysuj();
+}
+
+/**
+ * Przycisk "Załączniki" przy karcie - lista plikow z SharePointa (oferty z generatora),
+ * dodawanie przeciaganiem, z dysku albo z zalacznikow otwartego maila.
+ */
+function sekcjaZalacznikow(k: HTMLElement, akcje: HTMLElement, listName: string, itemId: string, firma: string) {
+  const btn = przyciskIk("crm-btn crm-btn-cichy", "spinacz", "Załączniki");
+  akcje.appendChild(btn);
+  const panel = el("div", "crm-zal");
+  panel.style.display = "none";
+  k.appendChild(panel);
+  const etykieta = btn.querySelector("span")!;
+
+  const lista = el("div", "crm-zal-lista");
+  const komunikat = el("div", "crm-komunikat");
+
+  const [strefa, zMaila] = polePrzesylania((p) => wyslij(p), komunikat, "Zapisz ten załącznik w SharePoint");
+
+  panel.append(lista, strefa, zMaila, komunikat);
+
+  let pliki: { nazwa: string; url: string }[] = [];
+  const rysuj = () => {
+    etykieta.textContent = `Załączniki (${pliki.length})`;
+    lista.innerHTML = "";
+    if (!pliki.length) lista.appendChild(el("div", "crm-pusto", "Brak plików w SharePoint."));
+    pliki.forEach((z) => {
+      const a = document.createElement("a");
+      a.className = "crm-zal-plik";
+      // dokumenty Office otwieraja sie w przegladarce, reszta pobiera
+      a.href = /\.(docx?|xlsx?|pptx?)$/i.test(z.nazwa) ? `${z.url}?web=1` : z.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.title = "Otwórz";
+      a.append(ikona("dokument"), el("span", undefined, z.nazwa));
+
+      // kosz z potwierdzeniem - oferta z generatora nie ma kopii w koszu dodatku
+      const wiersz = el("div", "crm-zal-wiersz");
+      const doDok = el("button", "crm-zal-kosz crm-zal-dok") as HTMLButtonElement;
+      doDok.title = "Kopiuj do Dokumentów firmy";
+      doDok.setAttribute("aria-label", `Kopiuj ${z.nazwa} do Dokumentów`);
+      doDok.appendChild(ikona("folder"));
+      doDok.onclick = () => {
+        if (wiersz.nextElementSibling?.classList.contains("crm-wybor-folderu")) return;
+        doDok.disabled = true;
+        const miejsce = el("div");
+        wiersz.after(miejsce);
+        const zamknijWybor = () => {
+          miejsce.remove();
+          doDok.disabled = false;
+        };
+        wyborFolderu(miejsce, firma, async (sciezka, zajete, przenies) => {
+          const nazwa = wolnaNazwa(z.nazwa, zajete);
+          await wyslijPlik(sciezka, nazwa, await pobierzZalacznik(listName, itemId, z.nazwa));
+          const gdzie = sciezka.replace(`${KATALOG_KLIENTOW}/`, "");
+          if (przenies) {
+            await usunZalacznik(listName, itemId, z.nazwa);
+            pliki = pliki.filter((x) => x !== z);
+            rysuj();
+          } else zamknijWybor();
+          komunikat.textContent = `${przenies ? "Przeniesiono" : "Skopiowano"} do ${gdzie}/${nazwa}`;
+          komunikat.className = "crm-komunikat crm-ok";
+        }, zamknijWybor);
+      };
+      const kosz = el("button", "crm-zal-kosz") as HTMLButtonElement;
+      kosz.title = "Usuń plik z SharePoint";
+      kosz.setAttribute("aria-label", `Usuń ${z.nazwa}`);
+      kosz.appendChild(ikona("kosz"));
+      wiersz.append(a, doDok, kosz);
+      lista.appendChild(wiersz);
+
+      kosz.onclick = () => {
+        kosz.disabled = true;
+        const pyt = el("div", "crm-zal-potwierdz");
+        pyt.appendChild(el("span", undefined, `Usunąć „${z.nazwa}”?`));
+        const tak = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+        const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+        pyt.append(tak, nie);
+        wiersz.after(pyt);
+        nie.onclick = () => {
+          pyt.remove();
+          kosz.disabled = false;
+        };
+        tak.onclick = async () => {
+          tak.disabled = nie.disabled = true;
+          komunikat.className = "crm-komunikat";
+          komunikat.textContent = `Usuwanie: ${z.nazwa}...`;
+          try {
+            await usunZalacznik(listName, itemId, z.nazwa);
+            pliki = pliki.filter((x) => x !== z);
+            rysuj();
+            komunikat.textContent = `Usunięto: ${z.nazwa}`;
+            komunikat.className = "crm-komunikat crm-ok";
+          } catch (e: any) {
+            pyt.remove();
+            kosz.disabled = false;
+            komunikat.textContent = e?.message ?? String(e);
+            komunikat.className = "crm-komunikat crm-blad";
+          }
+        };
+      };
+    });
+  };
+
+  let wczytane = false;
+  const wczytaj = async () => {
+    lista.innerHTML = "";
+    lista.appendChild(el("div", "crm-pusto", "Wczytywanie plików..."));
+    try {
+      pliki = (await getZalaczniki(listName, itemId)).sort((a, b) => a.nazwa.localeCompare(b.nazwa, "pl"));
+      wczytane = true;
+      rysuj();
+    } catch (e: any) {
+      lista.innerHTML = "";
+      etykieta.textContent = "Załączniki (błąd)";
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+    }
+  };
+
+  async function wyslij(doWyslania: DoWyslania[]) {
+    let ok = 0;
+    const bledy: string[] = [];
+    for (const p of doWyslania) {
+      komunikat.className = "crm-komunikat";
+      komunikat.textContent = `Wysyłanie: ${p.nazwa}...`;
+      try {
+        if (p.rozmiar > MAX_ZALACZNIK) throw new Error("plik większy niż 50 MB");
+        if (pliki.some((z) => z.nazwa.toLowerCase() === p.nazwa.toLowerCase())) {
+          throw new Error("plik o tej nazwie już jest");
+        }
+        await dodajZalacznik(listName, itemId, p.nazwa, await p.tresc());
+        ok++;
+      } catch (e: any) {
+        bledy.push(`${p.nazwa}: ${e?.message ?? e}`);
+      }
+    }
+    await wczytaj();
+    komunikat.textContent = [ok ? `Zapisano w SharePoint: ${ok}` : "", ...bledy].filter(Boolean).join(" · ");
+    komunikat.className = bledy.length ? "crm-komunikat crm-blad" : "crm-komunikat crm-ok";
+  }
+  btn.onclick = () => {
+    const widac = panel.style.display !== "none";
+    panel.style.display = widac ? "none" : "";
+    btn.classList.toggle("crm-btn-wcisniety", !widac);
+    if (!widac && !wczytane) void wczytaj();
+  };
+}
+
+/** "Generuj ofertę" na karcie szansy i TECS-u - na razie bez akcji, generator dojdzie pozniej. */
+function przyciskGenerujOferte(akcje: HTMLElement) {
+  const b = przyciskIk("crm-btn crm-btn-cichy", "dokument", "Generuj ofertę");
+  b.title = "Generowanie oferty — wkrótce";
+  b.onclick = () => blysk(b, "wkrótce");
+  akcje.appendChild(b);
+}
+
+/** Cel notatki: szansa sprzedazy (OPPSGUID) albo TECS (TECSGUID) - oba ida do Notes.Opps_ID. */
+type CelNotatki = Pick<Szansa, "id" | "guid" | "nazwa" | "firma" | "companyGuid" | "etap">;
+
+/** Przyciski "Notatki (n)" i "Dodaj notatkę" z lista pod karta - wspolne dla szans i TECS-ow. */
+function sekcjaNotatek(
+  k: HTMLElement,
+  akcje: HTMLElement,
+  o: CelNotatki,
+  c: Company,
+  notatki: Promise<Nota[]>,
+  ja: Promise<string>,
+  brakTekst: string
+) {
   const btnNoty = przyciskIk("crm-btn crm-btn-cichy", "dymek", "Notatki …");
-  const btnNowa = przyciskIk("crm-btn", "pioro", "Dodaj notatkę");
+  const btnNowa = przyciskIk("crm-btn crm-btn-cichy", "pioro", "Dodaj notatkę");
   akcje.append(btnNoty, btnNowa);
   const formBox = el("div");
   k.appendChild(formBox);
@@ -5046,7 +6930,7 @@ function kartaSzansy(
   const rysuj = () => {
     etykieta.textContent = `Notatki (${moje.length})`;
     listaNot.innerHTML = "";
-    if (!moje.length) listaNot.appendChild(el("div", "crm-pusto", "Brak notatek do tej szansy."));
+    if (!moje.length) listaNot.appendChild(el("div", "crm-pusto", brakTekst));
     moje.forEach((nt) => listaNot.appendChild(kartaNotatki(nt, mojeJa, () => {
       moje = moje.filter((x) => x !== nt);
       // wspolna lista firmy tez - karta po zmianie statusu rysuje sie z niej od nowa
@@ -5071,12 +6955,28 @@ function kartaSzansy(
     listaNot.style.display = widac ? "none" : "";
     btnNoty.classList.toggle("crm-btn-wcisniety", !widac);
   };
+  // drugi klik zamyka formularz jak przy "Notatki"; wpisana tresc wymaga potwierdzenia
+  const zamknij = () => {
+    formBox.innerHTML = "";
+    btnNowa.classList.remove("crm-btn-wcisniety");
+  };
+  const probaZamkniecia = () => {
+    const tresc = formBox.querySelector("textarea")?.value.trim() ?? "";
+    if (!tresc) return zamknij();
+    if (formBox.querySelector(".crm-zamknij-pyt")) return;
+    const pyt = el("div", "crm-zal-potwierdz crm-zamknij-pyt");
+    pyt.appendChild(el("span", undefined, "Notatka ma wpisaną treść. Na pewno zamknąć bez zapisu?"));
+    const tak = el("button", "crm-btn crm-btn-ostrz", "Zamknij bez zapisu") as HTMLButtonElement;
+    const nie = el("button", "crm-btn crm-btn-cichy", "Wróć do notatki") as HTMLButtonElement;
+    pyt.append(tak, nie);
+    formBox.prepend(pyt);
+    pyt.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    tak.onclick = zamknij;
+    nie.onclick = () => pyt.remove();
+  };
   btnNowa.onclick = () => {
-    btnNowa.disabled = true;
-    const zamknij = () => {
-      formBox.innerHTML = "";
-      btnNowa.disabled = false;
-    };
+    if (formBox.childElementCount) return probaZamkniecia();
+    btnNowa.classList.add("crm-btn-wcisniety");
     void formularzNotatkiSzansy(formBox, o, c, (nt) => {
       zamknij();
       moje = [nt, ...moje];
@@ -5084,16 +6984,14 @@ function kartaSzansy(
       rysuj();
       listaNot.style.display = "";
       btnNoty.classList.add("crm-btn-wcisniety");
-    }, zamknij);
+    }, probaZamkniecia);
   };
-
-  return k;
 }
 
-/** Nowa notatka do szansy (Notes.Opps_ID = OPPSGUID). Odpowiednik conNotatkaOpp z Power Apps. */
+/** Nowa notatka do szansy albo TECS-u (Notes.Opps_ID = OPPSGUID / TECSGUID). Odpowiednik conNotatkaOpp z Power Apps. */
 async function formularzNotatkiSzansy(
   miejsce: HTMLElement,
-  o: Szansa,
+  o: CelNotatki,
   c: Company,
   poZapisie: (nt: Nota) => void,
   anuluj: () => void
@@ -5502,19 +7400,10 @@ async function pokazKontakty() {
 
     trafienia.slice(0, LIMIT).forEach((k) => {
       const c = { guid: k.companyGuid, nazwa: k.firmaId } as Company;
-      const card = kartaKontaktu(k, c);
-
-      // firma kontaktu - klik prowadzi do pelnego widoku firmy
-      if (k.companyGuid) {
-        const doFirmy = el("button", "crm-kontakt-firma", `↗ ${k.firmaId || "firma"}`) as HTMLButtonElement;
-        doFirmy.title = "Otwórz firmę";
-        doFirmy.onclick = () => {
-          zakladkaFirmy = "Kontakty";
-          void pokazFirma(c);
-        };
-        card.insertBefore(doFirmy, card.children[1] ?? null);
-      }
-      lista.appendChild(card);
+      lista.appendChild(kartaKontaktu(k, c, () => {
+        wszyscy.splice(wszyscy.indexOf(k), 1);
+        rysuj();
+      }, true));
     });
   };
 

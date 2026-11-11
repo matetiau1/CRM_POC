@@ -118,6 +118,15 @@ export type Contact = {
   firmaId: string;       // FirmaID - etykieta firmy
   companyGuid: string;   // IdentyfikatorCompanies
   aktywny: boolean;      // Status
+  imie: string;
+  nazwisko: string;
+  role: string[];        // RolawMEDDIC
+  plec: string;          // P_x0142_e_x0107_
+  uwagi: string;         // UWAGI
+  stala: boolean;        // Sta_x0142_awysy_x0142_ka - stala wysylka Messengera
+  tymczasowa: boolean;   // Tymczasowawysy_x0142_ka
+  ileMessengerow: number; // IleMessenegerow (literowka w nazwie kolumny)
+  etag: string;
 };
 
 export function toContact(item: ListItem): Contact {
@@ -137,6 +146,15 @@ export function toContact(item: ListItem): Contact {
     firmaId: s(f.FirmaID),
     companyGuid: s(f.IdentyfikatorCompanies),
     aktywny: f.Status !== true,
+    imie: s(f["Imi_x0119_"]),
+    nazwisko: s(f["Nazwisko"]),
+    role: Array.isArray(f.RolawMEDDIC) ? (f.RolawMEDDIC as unknown[]).map(s) : f.RolawMEDDIC ? [s(f.RolawMEDDIC)] : [],
+    plec: s(f["P_x0142_e_x0107_"]),
+    uwagi: s(f.UWAGI),
+    stala: f["Sta_x0142_awysy_x0142_ka"] === true,
+    tymczasowa: f["Tymczasowawysy_x0142_ka"] === true,
+    ileMessengerow: Number(f.IleMessenegerow ?? 0) || 0,
+    etag: s(f["@odata.etag"] ?? (item as any)["@odata.etag"]),
   };
 }// ===== Dopisz na koncu src/taskpane/crm.ts =====
 
@@ -447,3 +465,39 @@ export const ETAP_SKROTY: Record<string, string> = {
   "Oferta wysłana": "Wysłana",
   "Rezygnacja z TECS": "Rezygnacja",
 };
+
+/** Produkt szansy sprzedazy (lista Oferty, IdentyfikatorOpps = OPPSGUID). */
+export type ProduktSzansy = {
+  id: string;
+  produkt: string;     // ProductID
+  ile: number;         // Liczba_licencji
+  typ: "PU" | "L" | "AEC" | "ALH" | "";
+  paidUp: number;      // Paidup - cena Paid-up za licencje
+  tecs: number;        // TECS - cena TECS za licencje
+  lease: number;       // Lease - dzierzawa za licencje za caly okres (juz z rabatem)
+  dni: number;         // Lease_Days
+  aec: number;         // AEC
+  alh: number;         // ALH
+  rabat: number;       // Rabat w %
+  suma: number;        // Suma
+  etag: string;
+};
+
+export function toProduktSzansy(item: ListItem): ProduktSzansy {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: s(f.id ?? item.id),
+    produkt: s(f.ProductID),
+    ile: n(f.Liczba_licencji),
+    typ: f.PaidUP0 === true ? "PU" : f.LeaseDays === true ? "L" : f.AECYN === true ? "AEC" : f.ALHYN === true ? "ALH" : "",
+    paidUp: n(f.Paidup),
+    tecs: n(f.TECS),
+    lease: n(f.Lease),
+    dni: n(f.Lease_Days),
+    aec: n(f.AEC),
+    alh: n(f.ALH),
+    rabat: n(f.Rabat),
+    suma: n(f.Suma),
+    etag: s(f["@odata.etag"] ?? (item as any)["@odata.etag"]),
+  };
+}
