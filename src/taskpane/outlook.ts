@@ -3331,10 +3331,6 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
 async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo = true) {
   // widok maila handlowca pokazuje tylko szanse TECS, bez kodow demo
   if (!zDemo && tecsTryb === "Demo") tecsTryb = "Bieżące";
-  segment(box, zDemo ? ["Bieżące", "Archiwalne", "Demo"] : ["Bieżące", "Archiwalne"], tecsTryb, (v) => {
-    tecsTryb = v as typeof tecsTryb;
-    void odswiezTecs(c);
-  });
 
   // notatki firmy jednym zapytaniem - przy TECS-ach grupujemy je po Opps_ID = TECSGUID
   const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
@@ -3365,6 +3361,12 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo 
     otworzFormTecs(nowyTecsZSzansy);
     nowyTecsZSzansy = null;
   } else if (!zDemo) nowyBox.appendChild(nowyBtn); // w karcie firmy jest "Nowy Opps TECS" w pasku
+
+  // przelacznik pod przyciskiem / formularzem - tak samo jak w szansach sprzedazy
+  segment(box, zDemo ? ["Bieżące", "Archiwalne", "Demo"] : ["Bieżące", "Archiwalne"], tecsTryb, (v) => {
+    tecsTryb = v as typeof tecsTryb;
+    void odswiezTecs(c);
+  });
 
   // nowe kody demo - formularz nad lista, otwierany kafelkiem pod zakladkami
   if (otworzKodyDemo) {
