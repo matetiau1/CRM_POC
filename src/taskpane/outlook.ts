@@ -1507,6 +1507,22 @@ async function firmaNadawcy(nadawca: string): Promise<Company | null> {
 
 let pokazSzansLicznik = 0;
 
+const DOMENA_MESCO = SUPPORT_MAILBOX.split("@")[1].toLowerCase();
+const zMESco = (adres: string) => adres.endsWith("@" + DOMENA_MESCO);
+
+/**
+ * Adresy klienta w otwartym mailu: nadawca, a gdy pisal ktos z MESco -
+ * odbiorcy "Do", potem "DW", bez adresow MESco.
+ */
+function adresyKlienta(item: Office.MessageRead | undefined): string[] {
+  const od = (item?.from?.emailAddress ?? "").toLowerCase();
+  if (od && !zMESco(od)) return [od];
+  const lista = [...(item?.to ?? []), ...(item?.cc ?? [])]
+    .map((r) => (r.emailAddress ?? "").toLowerCase())
+    .filter((a) => a && !zMESco(a));
+  return [...new Set(lista)];
+}
+
 async function pokazSzanse() {
   widok = "szanse";
   ustawNaglowek("Szanse", "nav-szanse");
@@ -1515,17 +1531,29 @@ async function pokazSzanse() {
 
   const item = Office.context.mailbox.item as Office.MessageRead;
   const nadawca = (item?.from?.emailAddress ?? "").toLowerCase();
-  const s = status("Szukanie firmy nadawcy...");
+  const s = status("Szukanie firmy klienta...");
   if (!nadawca) {
-    s.textContent = "Wybierz wiadomość, aby zobaczyć szanse firmy nadawcy.";
+    s.textContent = "Wybierz wiadomość, aby zobaczyć szanse firmy klienta.";
+    return;
+  }
+  // mail wyslany z MESco - firma klienta z odbiorcow
+  const adresy = adresyKlienta(item);
+  if (!adresy.length) {
+    s.textContent = "W tym mailu są tylko adresy MESco — brak klienta do pokazania.";
     return;
   }
 
   try {
-    const c = await firmaNadawcy(nadawca);
+    let c: Company | null = null;
+    for (const a of adresy) {
+      c = await firmaNadawcy(a);
+      if (c) break;
+    }
     if (wywolanie !== pokazSzansLicznik || widok !== "szanse") return;
     if (!c) {
-      s.textContent = `${nadawca} nie jest powiązany z żadną firmą w CRM.`;
+      s.textContent = adresy.length === 1
+        ? `${adresy[0]} nie jest powiązany z żadną firmą w CRM.`
+        : `Żaden z adresów (${adresy.join(", ")}) nie jest powiązany z firmą w CRM.`;
       return;
     }
 
@@ -7049,9 +7077,9 @@ async function formularzNotatkiSzansy(
     sprawdz();
   };
 
-  // domyslnie nadawca otwartego maila, jesli jest w tej firmie
-  const nadawca = ((Office.context.mailbox.item as Office.MessageRead)?.from?.emailAddress ?? "").toLowerCase();
-  const iNadawcy = kontakty.findIndex((x) => nadawca && x.email.toLowerCase() === nadawca);
+  // domyslnie klient z otwartego maila (nadawca, a przy mailu z MESco odbiorca), jesli jest w tej firmie
+  const adresy = adresyKlienta(Office.context.mailbox.item as Office.MessageRead | undefined);
+  const iNadawcy = kontakty.findIndex((x) => !!x.email && adresy.includes(x.email.toLowerCase()));
   if (iNadawcy >= 0) {
     osobaSel.value = String(iNadawcy);
     wybrana = kontakty[iNadawcy];
