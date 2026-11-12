@@ -5,7 +5,7 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
+  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
 } from "./graphService";
 import type { ListItem, PozycjaCennika, CenaTecs, ProgRabatu } from "./graphService";
 import {
@@ -79,11 +79,11 @@ let frazaKontaktow = "";
 
 type Zakladka =
   | "Kontakty" | "Supporty" | "Notatki" | "TECS"
-  | "Szanse" | "Posiadane" | "Szkolenia" | "Uwagi" | "Dokumenty";
+  | "Szanse" | "Posiadane" | "Szkolenia" | "Demo" | "Dokumenty";
 
 let zakladkaFirmy: Zakladka = "Kontakty";
-let tecsTryb: "Bieżące" | "Archiwalne" | "Demo" = "Bieżące";
-let otworzKodyDemo = false; // kafelek "Nowe kody demo" -> TECS/Demo z otwartym formularzem
+let tecsTryb: "Bieżące" | "Archiwalne" = "Bieżące";
+let otworzKodyDemo = false; // "Kody demo" na pasku zakladki Demo -> formularz nad lista
 let otworzNowaSzanse = false; // "Nowy Opps Soft" z paska firmy -> Szanse z otwartym formularzem
 let otworzNowyTecs = false; // "Zapisz i utworz TECS" przy wygranej -> TECS/Biezace z otwartym formularzem
 let nowyTecsZSzansy: Szansa | null = null; // wygrana szansa - jej produkty podpowiadamy do TECS-u
@@ -815,6 +815,81 @@ async function panelNowego() {
   rzad.appendChild(komunikat);
   box.appendChild(rzad);
 
+  // --- TEST: to samo zgloszenie, ale numer z przeplywu HTTP (PRZEPLYW-HTTP.md); tylko dla administratora ---
+  const test = el("button", "crm-btn crm-btn-cichy crm-test-flow", "TEST") as HTMLButtonElement;
+  test.title = "Załóż zgłoszenie i nadaj numer przez przepływ HTTP (Support_TicketCRM_forward_HTTP)";
+  test.hidden = true;
+  rzad.insertBefore(test, komunikat);
+  const dziennik = el("pre", "crm-test-dziennik");
+  dziennik.hidden = true;
+  box.appendChild(dziennik);
+  // ten przeplyw obsluguje tylko skrzynke wspoldzielona support@ - prywatna skrzynka dostanie osobny
+  const jaAdmin = getMojMail().then((m) => m.trim().toLowerCase() === ADMIN_KONTAKTOW, () => false);
+
+  test.onclick = async () => {
+    const wybrany = serwisanci[Number(wybor.value)];
+    if (!wybrany) {
+      komunikat.textContent = "Wybierz opiekuna supportu";
+      komunikat.className = "crm-komunikat crm-blad";
+      return;
+    }
+    test.disabled = btn.disabled = wybor.disabled = true;
+    dziennik.hidden = false;
+    dziennik.textContent = "";
+    const log = (t: string) => (dziennik.textContent += t + "\n");
+    const t0 = Date.now();
+    const czas = () => `${((Date.now() - t0) / 1000).toFixed(1)} s`;
+    komunikat.textContent = "TEST...";
+    komunikat.className = "crm-komunikat";
+
+    let token = "";
+    try {
+      log(`1. Token Power Automate...`);
+      token = await getFlowToken();
+      log(`   OK (${czas()}) ${opisTokenu(token)}`);
+    } catch (e: any) {
+      log(`   BŁĄD: ${e?.message ?? e}`);
+      komunikat.textContent = "TEST: nie ma tokenu do Power Automate";
+      komunikat.className = "crm-komunikat crm-blad";
+      test.disabled = btn.disabled = wybor.disabled = false;
+      return;
+    }
+
+    let recordId = "";
+    try {
+      log(`2. Wiersz w Support (z maila w support@)...`);
+      recordId = String((await createTicket(polaZgloszenia(wybrany, false))).id);
+      log(`   OK (${czas()}) id=${recordId}`);
+    } catch (e: any) {
+      log(`   BŁĄD: ${e?.message ?? e}`);
+      komunikat.textContent = "TEST: nie zapisano wiersza";
+      komunikat.className = "crm-komunikat crm-blad";
+      test.disabled = btn.disabled = wybor.disabled = false;
+      return;
+    }
+
+    try {
+      log(`3. Przepływ HTTP...`);
+      const wynik = await runTicketFlow({
+        recordId,
+        mailSubject: temat,
+        opiekunNazwa: wybrany.nazwa,
+        mailItemId: mailIdRest(item),
+        mailKlienta: nadawca,
+        mailOpiekuna: wybrany.mail,
+      }, token);
+      log(`   OK (${czas()}) HTTP ${wynik.status}: ${wynik.tresc.slice(0, 300)}`);
+      komunikat.textContent = `TEST: zgłoszenie MESco-ID-${wynik.ticketId}`;
+      komunikat.className = "crm-komunikat crm-ok";
+    } catch (e: any) {
+      log(`   BŁĄD (${czas()}): ${e?.message ?? e}`);
+      log(`   Wiersz id=${recordId} istnieje - numer nada stary przepływ albo trzeba go usunąć.`);
+      komunikat.textContent = "TEST: zapisano, ale numer nie został nadany";
+      komunikat.className = "crm-komunikat crm-blad";
+    }
+    test.disabled = btn.disabled = wybor.disabled = false;
+  };
+
   // zgloszenie z wlasnej skrzynki omija przeplyw skrzynki supportowej
   let zSupportu = true;
   try {
@@ -827,21 +902,11 @@ async function panelNowego() {
   ostrzezenie.style.display = "none";
   box.appendChild(ostrzezenie);
 
-  /** reczne = bez MailID i MailSubject, jak zgloszenie z kontaktu firmy */
-  const zaloz = async (reczne = false) => {
-    const wybrany = serwisanci[Number(wybor.value)];
-    if (!wybrany) {
-      komunikat.textContent = "Wybierz opiekuna supportu";
-      komunikat.className = "crm-komunikat crm-blad";
-      return;
-    }
+  // TEST widoczny tylko dla administratora i tylko w skrzynce support@
+  test.hidden = !(zSupportu && (await jaAdmin));
 
-    ostrzezenie.style.display = "none";
-    btn.disabled = true;
-    wybor.disabled = true;
-    komunikat.textContent = "Zakładanie...";
-    komunikat.className = "crm-komunikat";
-
+  /** Pola nowego zgloszenia; reczne = bez MailID i MailSubject, jak zgloszenie z kontaktu firmy. */
+  const polaZgloszenia = (wybrany: (typeof serwisanci)[number], reczne: boolean): Record<string, unknown> => {
     const dzis = new Date();
     const dataISO = new Date(Date.UTC(
       dzis.getFullYear(), dzis.getMonth(), dzis.getDate(), 7, 0, 0
@@ -867,6 +932,26 @@ async function panelNowego() {
     if (wybrany.siteId !== null) {
       pola["Opiekun_supportuLookupId"] = String(wybrany.siteId);
     }
+
+    return pola;
+  };
+
+  /** reczne = bez MailID i MailSubject, jak zgloszenie z kontaktu firmy */
+  const zaloz = async (reczne = false) => {
+    const wybrany = serwisanci[Number(wybor.value)];
+    if (!wybrany) {
+      komunikat.textContent = "Wybierz opiekuna supportu";
+      komunikat.className = "crm-komunikat crm-blad";
+      return;
+    }
+
+    ostrzezenie.style.display = "none";
+    btn.disabled = true;
+    wybor.disabled = true;
+    komunikat.textContent = "Zakładanie...";
+    komunikat.className = "crm-komunikat";
+
+    const pola = polaZgloszenia(wybrany, reczne);
 
     try {
       await createTicket(pola);
@@ -1577,7 +1662,7 @@ async function pokazSzanse() {
 
     const box = el("div");
     root().appendChild(box);
-    if (szanseRodzaj === "TECS") await zakladkaTecs(box, s, c, false);
+    if (szanseRodzaj === "TECS") await zakladkaTecs(box, s, c);
     else await zakladkaSzanse(box, s, c, () => void pokazSzanse(), true);
   } catch (e: any) {
     console.error(e);
@@ -2772,20 +2857,27 @@ function naglowekFirmy(c: Company): HTMLElement {
   kafle.append(lewa, godz);
   szczegoly.appendChild(kafle);
 
+  // uwagi do firmy - wczesniej osobna zakladka
+  const uwagi = (f?.uwagi ?? "").trim();
+  const uwagiBox = el("div", "crm-hd-uwagi");
+  uwagiBox.appendChild(poleIk("crm-hd-godz-lbl", "dymek", "Uwagi"));
+  uwagiBox.appendChild(el("div", uwagi ? "crm-uwagi" : "crm-pusto", uwagi || "Brak uwag dla tej firmy."));
+  szczegoly.appendChild(uwagiBox);
+
   // --- zakladki jak pasek w Power Apps: ikona + nazwa, akcje wypelnione na koncu ---
   const pasek = el("div", "crm-zakladki");
   const nazwy: [Zakladka, string, keyof typeof IKONY][] = [
     ["Kontakty", "Kontakty", "osoba"],
     ["Notatki", "Notatki", "dokument"],
     ["Supporty", "Supporty", "sluchawki"],
-    ["Szkolenia", "Szkolenia", "czapka"],
     ["Szanse", "Szanse", "cel"],
     ["TECS", "TECS", "tarcza"],
+    ["Demo", "Demo", "licencja"],
+    ["Szkolenia", "Szkolenia", "czapka"],
     ["Posiadane", "Klient posiada", "paczka"],
-    ["Uwagi", "Uwagi", "dymek"],
     ["Dokumenty", "Dokumenty", "folder"],
   ];
-  // Szanse i TECS w jednej grupie - zawsze obok siebie, nawet gdy pasek sie zawija
+  // Szanse, TECS i Demo w jednej grupie - w siatce 3 kolumn wypadaja w jednym rzedzie
   const sprzedaz = el("div", "crm-zakladki-para");
   nazwy.forEach(([z, etykieta, ik]) => {
     const b = przyciskIk("crm-zakladka", ik, etykieta);
@@ -2794,7 +2886,7 @@ function naglowekFirmy(c: Company): HTMLElement {
       zakladkaFirmy = z;
       void pokazFirma(c);
     };
-    if (z === "Szanse" || z === "TECS") {
+    if (z === "Szanse" || z === "TECS" || z === "Demo") {
       sprzedaz.appendChild(b);
       if (z === "Szanse") pasek.appendChild(sprzedaz);
     } else pasek.appendChild(b);
@@ -2807,15 +2899,14 @@ function naglowekFirmy(c: Company): HTMLElement {
   // kody demo laduja w TECS / Demo z otwartym formularzem
   const demo = przyciskIk("crm-zakladka", "licencja", "Kody demo");
   demo.onclick = () => {
-    zakladkaFirmy = "TECS";
-    tecsTryb = "Demo";
+    zakladkaFirmy = "Demo";
     otworzKodyDemo = true;
     void pokazFirma(c);
   };
-  // akcje zalezne od zakladki: w TECS tylko TECS i kody demo, w Szansach tylko nowa szansa,
+  // akcje zalezne od zakladki: kody demo tylko w Demo, w TECS tylko nowy TECS, w Szansach tylko nowa szansa,
   // a na zakladkach bez zwiazku ze sprzedaza zadnych - mniej balaganu
-  const bezAkcji = (["Supporty", "Szkolenia", "Uwagi", "Dokumenty"] as Zakladka[]).includes(zakladkaFirmy);
-  if (zakladkaFirmy !== "Szanse" && !bezAkcji) akcjePaska.appendChild(demo);
+  const bezAkcji = (["Supporty", "Szkolenia", "Dokumenty", "Demo"] as Zakladka[]).includes(zakladkaFirmy);
+  if (zakladkaFirmy === "Demo") akcjePaska.appendChild(demo);
 
   const nowaSzansa = przyciskIk("crm-zakladka crm-zakladka-glowna", "nowaSzansa", "Nowy Opps Soft");
   nowaSzansa.onclick = () => {
@@ -2850,7 +2941,7 @@ async function pokazFirma(c: Company) {
  if (!firmaPelna || firmaPelna.guid !== c.guid) {
     firmaPelna = null;
     tecsAlert = null;
-    if (!otworzNowyTecs && !otworzKodyDemo) tecsTryb = "Bieżące";
+    if (!otworzNowyTecs) tecsTryb = "Bieżące";
     if (!otworzNowaSzanse) szanseZamkniete = false;
     autoTecs = autoSzanse = true;
     try {
@@ -2898,7 +2989,7 @@ async function pokazFirma(c: Company) {
       case "Szanse":    await zakladkaSzanse(tresc, s, c); break;
       case "Posiadane": await zakladkaPosiadane(tresc, s, c); break;
       case "Szkolenia": await zakladkaSzkolenia(tresc, s, c); break;
-      case "Uwagi":     zakladkaUwagi(tresc, s); break;
+      case "Demo":      await zakladkaTecs(tresc, s, c, true); break;
       case "Dokumenty": await zakladkaDokumenty(tresc, s, c); break;
     }
   } catch (e: any) {
@@ -3356,9 +3447,9 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   lista.forEach((nt) => box.appendChild(kartaNotatki(nt, ja)));
 }
 
-async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo = true) {
-  // widok maila handlowca pokazuje tylko szanse TECS, bez kodow demo
-  if (!zDemo && tecsTryb === "Demo") tecsTryb = "Bieżące";
+async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, demo = false) {
+  // widok maila nie ma paska firmy - przycisk nowego TECS-u nad lista
+  const wMailu = widok === "szanse";
 
   // notatki firmy jednym zapytaniem - przy TECS-ach grupujemy je po Opps_ID = TECSGUID
   const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
@@ -3375,7 +3466,7 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo 
       void odswiezTecs(c);
     }, () => {
       nowyBox.innerHTML = "";
-      if (!zDemo) nowyBox.appendChild(nowyBtn);
+      if (wMailu) nowyBox.appendChild(nowyBtn);
       nowyBtn.disabled = false;
     });
   };
@@ -3384,17 +3475,19 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo 
     nowyBox.innerHTML = "";
     otworzFormTecs();
   };
-  if (otworzNowyTecs) {
+  if (otworzNowyTecs && !demo) {
     otworzNowyTecs = false;
     otworzFormTecs(nowyTecsZSzansy);
     nowyTecsZSzansy = null;
-  } else if (!zDemo) nowyBox.appendChild(nowyBtn); // w karcie firmy jest "Nowy Opps TECS" w pasku
+  } else if (wMailu) nowyBox.appendChild(nowyBtn); // w karcie firmy jest "Nowy Opps TECS" w pasku
 
-  // przelacznik pod przyciskiem / formularzem - tak samo jak w szansach sprzedazy
-  segment(box, zDemo ? ["Bieżące", "Archiwalne", "Demo"] : ["Bieżące", "Archiwalne"], tecsTryb, (v) => {
-    tecsTryb = v as typeof tecsTryb;
-    void odswiezTecs(c);
-  });
+  // przelacznik pod przyciskiem / formularzem - tak samo jak w szansach sprzedazy; Demo ma osobna zakladke
+  if (!demo) {
+    segment(box, ["Bieżące", "Archiwalne"], tecsTryb, (v) => {
+      tecsTryb = v as typeof tecsTryb;
+      void odswiezTecs(c);
+    });
+  }
 
   // nowe kody demo - formularz nad lista, otwierany kafelkiem pod zakladkami
   if (otworzKodyDemo) {
@@ -3406,7 +3499,7 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo 
 
   const items = await getByCompany("Opps_TECS", c.guid, { top: 100 });
   const wszystkie = items.map(toTecs);
-  if (autoTecs) {
+  if (autoTecs && !demo) {
     autoTecs = false;
     if (tecsTryb === "Bieżące" && !wszystkie.some((t) => ETAPY_TECS_BIEZACE.includes(t.etap))) {
       tecsTryb = "Archiwalne";
@@ -3414,14 +3507,14 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, zDemo 
     }
   }
   const lista =
-    tecsTryb === "Bieżące"
+    demo
+      ? wszystkie.filter((t) => t.etap === "Demo")
+      : tecsTryb === "Bieżące"
       ? wszystkie.filter((t) => ETAPY_TECS_BIEZACE.includes(t.etap))
-      : tecsTryb === "Archiwalne"
-      ? wszystkie.filter((t) => ETAPY_TECS_ARCHIWALNE.includes(t.etap))
-      : wszystkie.filter((t) => t.etap === "Demo");
+      : wszystkie.filter((t) => ETAPY_TECS_ARCHIWALNE.includes(t.etap));
 
-  s.textContent = `TECS ${tecsTryb.toLowerCase()} — ${lista.length}`;
-  if (!lista.length) return pusto(box, `Brak pozycji: ${tecsTryb}.`);
+  s.textContent = demo ? `Kody demo — ${lista.length}` : `TECS ${tecsTryb.toLowerCase()} — ${lista.length}`;
+  if (!lista.length) return pusto(box, demo ? "Brak kodów demo." : `Brak pozycji: ${tecsTryb}.`);
 
   lista.forEach((t) => {
     const k = el("div", "crm-kafel");
@@ -7356,12 +7449,6 @@ async function zakladkaSzkolenia(box: HTMLElement, s: HTMLElement, c: Company) {
 
     box.appendChild(k);
   });
-}
-
-function zakladkaUwagi(box: HTMLElement, s: HTMLElement) {
-  s.textContent = "Uwagi do firmy";
-  const t = (firmaPelna?.uwagi ?? "").trim();
-  box.appendChild(el("div", t ? "crm-uwagi" : "crm-pusto", t || "Brak uwag dla tej firmy."));
 }
 
 // ---------------------------------------------------------------- kontakty (cala baza)

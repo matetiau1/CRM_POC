@@ -1,86 +1,134 @@
 /* ================================================================
    MESco CRM - panel zadan Outlook
    Kompletny arkusz. Zastepuje CALA dotychczasowa tresc
-   src/taskpane/taskpane.css (wszystkie doklejane kawalki).
+   src/taskpane/taskpane.css.
 
-   Zasada: kolory statusow i etykiet zostaly bez zmian (sa czescia
-   systemu). Zmienione: kształty, typografia, odstepy, cienie, focus.
+   Jezyk wizualny: Apple HIG przeniesiony na waski panel.
+   - szare tlo strony, biale karty bez ramek (grupowana lista)
+   - jeden kolor akcentu (marka) zamiast dwoch (marka + fiolet Power Apps)
+   - polprzezroczyste paski (gorny i dolny) z rozmyciem tla
+   - segmented control, pola i przyciski o wspolnej wysokosci
+   - ruch krotki i celowy; nic nie rusza sie samo z siebie
+
+   Nazwy klas, tokeny --crm-* i haki dla JS (crm-open, crm-laduje,
+   crm-zapisano, crm-blad-walidacji, --kol / --tlo, kolory inline)
+   zostaly bez zmian. Kolory statusow - bez zmian.
    ================================================================ */
 
 /* ---------- 1. TOKENY ---------- */
 
 :root {
-  /* marka */
-  --crm-brand:        #3860B2;
-  --crm-brand-hover:  #2E4F96;
-  --crm-brand-tlo:    #EAEEF7;
+  /* marka = jedyny akcent interfejsu */
+  --crm-brand:         #3860B2;
+  --crm-brand-hover:   #2E4F96;
+  --crm-brand-wcisk:   #27447F;
+  --crm-brand-tlo:     #EBF0FA;
+  --crm-brand-linia:   #D5DFF3;
 
   /* statusy - NIE zmieniac, zgodne z systemem */
-  --crm-c-blad:       #A80000;
-  --crm-c-blad-hover: #8A0000;
-  --crm-c-blad-tlo:   #FDF3F4;
-  --crm-c-blad-linia: #F3D6D8;
-  --crm-c-ok:         #107C10;
-  --crm-c-ok-tlo:     #EEFAF0;
-  --crm-c-ok-linia:   #C6E8CD;
-  --crm-c-uwaga:      #854F0B;
-  --crm-c-uwaga-tlo:  #FAEEDA;
-  --crm-c-uwaga-lin:  #F0DFB8;
+  --crm-c-blad:        #A80000;
+  --crm-c-blad-hover:  #8A0000;
+  --crm-c-blad-tlo:    #FDF3F4;
+  --crm-c-blad-linia:  #F3D6D8;
+  --crm-c-ok:          #107C10;
+  --crm-c-ok-tlo:      #EEFAF0;
+  --crm-c-ok-linia:    #C6E8CD;
+  --crm-c-uwaga:       #854F0B;
+  --crm-c-uwaga-tlo:   #FAEEDA;
+  --crm-c-uwaga-lin:   #F0DFB8;
+
+  /* kolory znaczeniowe ikon i akcji (wczesniej wpisane na sztywno) */
+  --crm-zielony:       #16A34A;
+  --crm-zielony-tlo:   #E6F6EE;
+  --crm-zielony-linia: #A7DCC0;
+  --crm-pomarancz:     #D97706;
+  --crm-pomarancz-tlo: #FEF3E2;
+  --crm-zolty:         #CA8A04;
+  --crm-zolty-tlo:     #FEF9C3;
+  --crm-czerwony:      #DC2626;
+  --crm-czerwony-tlo:  #FEE2E2;
+  --crm-czerwony-lin:  #F8B4B4;
+  --crm-morski:        #0D9488;
+  --crm-fiolet:        #7C3AED;
 
   /* neutralne */
-  --crm-tekst:        #1B1A19;
-  --crm-tekst-2:      #5A5856;
-  --crm-tekst-3:      #8A8886;
-  --crm-tlo:          #FFFFFF;
-  --crm-tlo-2:        #F7F6F5;
-  --crm-tlo-3:        #F3F2F1;
-  --crm-linia:        #EAE8E6;
-  --crm-linia-mocna:  #CFCDCB;
+  --crm-tekst:         #1D1D1F;
+  --crm-tekst-2:       #5E5E63;
+  --crm-tekst-3:       #77777D;
+  --crm-tlo-strona:    #F2F2F7;   /* tlo panelu */
+  --crm-tlo:           #FFFFFF;   /* karty, pola */
+  --crm-tlo-2:         #F5F5F7;   /* wstawki wewnatrz kart */
+  --crm-tlo-3:         #E9E9ED;   /* pastylki, wylaczone */
+  --crm-wypelnienie:   rgba(118, 118, 128, .13);  /* szare przyciski, tory */
+  --crm-wypelnienie-2: rgba(118, 118, 128, .22);
+  --crm-linia:         #E4E4E9;
+  --crm-linia-mocna:   #C9C9CF;
 
-  /* typografia */
-  --crm-font: "Segoe UI Variable Text", "Segoe UI Variable Static Text",
-              "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
-              "Helvetica Neue", sans-serif;
-  --crm-font-naglowek: "Segoe UI Variable Display",
-              "Segoe UI Variable Static Display", "Segoe UI Semibold",
-              var(--crm-font);
+  /* typografia - na Macu San Francisco, na Windows Segoe UI Variable */
+  --crm-font: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+              "Segoe UI Variable Text", "Segoe UI Variable Static Text",
+              "Segoe UI", system-ui, "Helvetica Neue", sans-serif;
+  --crm-font-naglowek: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+              "Segoe UI Variable Display", "Segoe UI Variable Static Display",
+              "Segoe UI Semibold", "Segoe UI", system-ui, sans-serif;
 
-  --crm-t-mikro: 10px;
-  --crm-t-mini:  11px;
-  --crm-t-maly:  12px;
-  --crm-t-baza:  13px;
-  --crm-t-duzy:  15px;
+  /* skala o 1 px wieksza niz poprzednio - nic ponizej 11 px.
+     Zeby wrocic do starej gestosci: 10 / 11 / 12 / 13 / 15 */
+  --crm-t-mikro: 11px;
+  --crm-t-mini:  12px;
+  --crm-t-maly:  13px;
+  --crm-t-baza:  14px;
+  --crm-t-duzy:  17px;
 
-  /* kształty - jedna spojna skala zamiast mieszanki 0/3/4/10px */
-  --crm-r-s:    6px;
-  --crm-r-m:    10px;
-  --crm-r-l:    14px;
+  /* ksztalty */
+  --crm-r-xs:   6px;
+  --crm-r-s:    8px;
+  --crm-r-m:    12px;
+  --crm-r-l:    16px;
   --crm-r-pill: 999px;
-  --crm-szyna: 3px;
+  --crm-szyna:  3px;
 
-  /* cienie - bardzo lekkie, panel jest waski */
-  --crm-cien-1: 0 1px 2px rgba(27, 26, 25, .06);
-  --crm-cien-2: 0 4px 12px rgba(27, 26, 25, .10), 0 1px 3px rgba(27, 26, 25, .06);
-  --crm-ring:   0 0 0 3px rgba(56, 96, 178, .18);
+  /* wysokosci kontrolek - pole i przycisk w jednym rzedzie sa rowne */
+  --crm-h-pole:     32px;
+  --crm-h-przycisk: 30px;
 
-  --crm-anim: 140ms cubic-bezier(.33, 0, .2, 1);
+  /* glebia */
+  --crm-cien-1:     0 1px 2px rgba(0, 0, 0, .06);
+  --crm-cien-2:     0 0 0 1px rgba(0, 0, 0, .04), 0 4px 14px rgba(0, 0, 0, .09);
+  --crm-cien-karta: 0 0 0 1px rgba(0, 0, 0, .035), 0 1px 2px rgba(0, 0, 0, .04);
+  --crm-cien-fokus: 0 0 0 1px rgba(56, 96, 178, .28), 0 8px 24px rgba(0, 0, 0, .10);
+  --crm-ring:       0 0 0 3px rgba(56, 96, 178, .22);
+
+  /* ruch */
+  --crm-anim:     160ms cubic-bezier(.25, .1, .25, 1);
+  --crm-e-szybko: 140ms cubic-bezier(.25, .1, .25, 1);
+  --crm-e-skup:   320ms cubic-bezier(.2, .8, .2, 1);
+
+  /* paski z rozmyciem */
+  --crm-szklo:      rgba(242, 242, 247, .80);
+  --crm-szklo-filtr: saturate(180%) blur(20px);
 }
 
 /* ---------- 2. PODSTAWA ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* atrybut hidden wygrywa z kazdym display ustawionym w tym arkuszu */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
   /* wlasne tlo i kolor - inaczej przebija ciemny motyw Outlooka */
-  background: var(--crm-tlo);
+  background: var(--crm-tlo-strona);
   color: var(--crm-tekst);
   font-family: var(--crm-font);
   font-size: var(--crm-t-baza);
-  line-height: 1.45;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* scaffold Office wstrzykuje display:flex w atrybucie style;
@@ -98,17 +146,37 @@ button, input, select, textarea {
   font-size: inherit;
   color: inherit;
 }
+button { -webkit-tap-highlight-color: transparent; }
 
-/* wszedzie ten sam, widoczny focus */
+::selection { background: rgba(56, 96, 178, .22); }
+
+/* cienkie paski przewijania w listach wewnetrznych */
+* { scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, .22) transparent; }
+
+/* wszedzie ten sam, widoczny focus - tylko z klawiatury */
 :focus-visible {
   outline: 2px solid var(--crm-brand);
   outline-offset: 2px;
-  border-radius: var(--crm-r-s);
 }
 
 /* liczby w kolumnach nie skacza */
-.crm-id, .crm-czas, .crm-data, .crm-tecs, .crm-meta {
+.crm-id, .crm-czas, .crm-data, .crm-tecs, .crm-meta,
+.crm-kafel-wartosc, .crm-licznik-val, .crm-kat-ile,
+.crm-tecs-poz-suma, .crm-tecs-stopka-war, .crm-tecs-kafel-war,
+.crm-tecs-podglad-rzad, .crm-hd-kafel-val, .crm-hd-godz-val, .crm-demo-ile {
   font-variant-numeric: tabular-nums;
+}
+
+/* wspolna ikona liniowa */
+.crm-ikona {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ---------- 3. PASEK MARKI ---------- */
@@ -117,14 +185,14 @@ button, input, select, textarea {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 12px 14px 10px;
+  padding: 12px 14px 8px;
 }
 
 .crm-brand-mark {
   width: 28px;
   height: 28px;
   line-height: 28px;
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--crm-brand);
   color: #fff;
   font-size: 9px;
@@ -137,126 +205,112 @@ button, input, select, textarea {
 .crm-brand-icon {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 7px;
   flex: none;
   display: block;
 }
 
 .crm-brand-name {
   font-family: var(--crm-font-naglowek);
-  font-size: 15px;
+  font-size: var(--crm-t-baza);
   font-weight: 600;
-  letter-spacing: -.15px;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
 }
 
-/* ---------- 4. NAWIGACJA (pasek na pelna szerokosc panelu) ---------- */
+/* ---------- 4. NAWIGACJA (przyklejony pasek z rozmyciem) ---------- */
 
 .crm-nav {
+  position: sticky;
+  top: 0;
+  z-index: 15;
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0 0 12px;
-  padding: 9px 14px;
-  background: var(--crm-brand);
-  color: #fff;
+  padding: 8px 14px;
+  background: var(--crm-szklo);
+  -webkit-backdrop-filter: var(--crm-szklo-filtr);
+  backdrop-filter: var(--crm-szklo-filtr);
+  border-bottom: 1px solid var(--crm-linia);
+  color: var(--crm-tekst);
 }
 
 .crm-nav-title {
   font-family: var(--crm-font-naglowek);
   font-size: var(--crm-t-duzy);
   font-weight: 600;
-  letter-spacing: -.15px;
+  letter-spacing: -.02em;
   margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .crm-nav-btn {
-  background: rgba(255, 255, 255, .16);
+  flex: none;
+  min-height: 26px;
+  background: var(--crm-wypelnienie);
   border: 0;
-  color: #fff;
+  color: var(--crm-brand);
   border-radius: var(--crm-r-pill);
-  padding: 5px 12px;
+  padding: 4px 12px;
   font-size: var(--crm-t-mini);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--crm-anim), color var(--crm-anim);
+  transition: background var(--crm-anim), color var(--crm-anim),
+              transform var(--crm-e-szybko);
 }
-.crm-nav-btn:hover { background: rgba(255, 255, 255, .30); }
+.crm-nav-btn:hover { background: var(--crm-wypelnienie-2); }
 
 .crm-nav-btn.crm-nav-aktywny {
-  background: #fff;
-  color: var(--crm-brand);
+  background: var(--crm-brand);
+  color: #fff;
   font-weight: 600;
-}
-
-.crm-nav-btn:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: 2px;
 }
 
 /* ---------- 5. KONTENER LISTY ---------- */
 
-#item-subject { padding: 0 14px 18px; }
+#item-subject { padding: 0 12px 18px; }
 
+/* naglowek sekcji / licznik wynikow */
 .crm-status {
-  font-size: var(--crm-t-mini);
+  font-size: var(--crm-t-mikro);
   color: var(--crm-tekst-3);
-  padding: 2px 0 10px;
+  padding: 2px 4px 8px;
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .04em;
   font-weight: 600;
 }
 .crm-error { color: var(--crm-c-blad); text-transform: none; letter-spacing: 0; }
 
 .crm-pusto {
   font-size: var(--crm-t-maly);
-  color: var(--crm-tekst-2);
-  padding: 20px 4px;
+  color: var(--crm-tekst-3);
+  padding: 28px 12px;
   text-align: center;
 }
 
 /* ---------- 6. KARTA ZGLOSZENIA ---------- */
 
-/* zamiast sciętej karty z pasem po lewej: pelne zaokraglenie
-   + wewnetrzna szyna z zaokraglonymi koncami */
 .crm-card {
   position: relative;
   background: var(--crm-tlo);
-  border: 2px solid var(--crm-linia);
   border-radius: var(--crm-r-m);
-  padding: 10px 12px 10px 16px;
-  margin-bottom: 8px;
-  box-shadow: var(--crm-cien-1);
-  transition: box-shadow var(--crm-anim), border-color var(--crm-anim),
-              transform var(--crm-anim);
-}
-.crm-card::before {
-content: "";
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 10px;
-  bottom: 10px;
-  width: var(--crm-szyna);
-  border-radius: var(--crm-r-pill);
-  background: var(--crm-brand);
-  transition: top var(--crm-anim), bottom var(--crm-anim);
+  border-left: var(--crm-szyna) solid var(--crm-brand); /* kolor statusu z JS */
+  padding: 10px 12px 10px 11px;
+  margin-bottom: 6px;
+  box-shadow: var(--crm-cien-karta);
+  transition: opacity var(--crm-e-skup), transform var(--crm-e-skup),
+              box-shadow var(--crm-e-skup);
 }
 
-.crm-card-head { cursor: pointer; }
-.crm-card:has(.crm-card-head:hover) {
-  border-color: var(--crm-linia-mocna);
-  box-shadow: var(--crm-cien-2);
-  transform: translateY(-1px);
-}
-.crm-card-head:focus-visible { outline: 2px solid var(--crm-brand); outline-offset: 3px; }
+.crm-card-head { cursor: pointer; border-radius: var(--crm-r-xs); }
+.crm-card:has(.crm-card-head:hover) { box-shadow: var(--crm-cien-2); }
+.crm-card-head:focus-visible { outline-offset: 4px; }
 
-.crm-card.crm-open {
-  background: var(--crm-tlo);
-  border-color: var(--crm-linia-mocna);
-  box-shadow: var(--crm-cien-2);
-}
-.crm-card.crm-open::before { top: 6px; bottom: 6px; }
+.crm-card.crm-open { box-shadow: var(--crm-cien-fokus); }
 
 .crm-card-top { display: flex; align-items: center; gap: 8px; }
 
@@ -264,7 +318,7 @@ content: "";
   font-family: var(--crm-font-naglowek);
   font-weight: 600;
   font-size: var(--crm-t-baza);
-  letter-spacing: -.1px;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
 }
 
@@ -275,7 +329,7 @@ content: "";
   white-space: nowrap;
 }
 
-.crm-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.crm-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
 .crm-osoba { font-size: var(--crm-t-maly); color: var(--crm-tekst); }
 .crm-czas { margin-left: auto; font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
 
@@ -283,7 +337,7 @@ content: "";
 
 .crm-opis {
   font-size: var(--crm-t-mini);
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--crm-tekst-2);
   margin-top: 6px;
   display: -webkit-box;
@@ -295,6 +349,7 @@ content: "";
 
 .crm-foot { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
 .crm-data { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+
 /* otwarte - zielona pastylka, zamkniete - szara */
 .crm-lock {
   display: inline-flex;
@@ -306,13 +361,11 @@ content: "";
   border-radius: var(--crm-r-pill);
   color: var(--crm-c-ok);
   background: var(--crm-c-ok-tlo);
-  border: 1px solid var(--crm-c-ok-linia);
 }
 .crm-lock .crm-ikona { width: 12px; height: 12px; }
 .crm-lock.crm-lock-zamk {
   color: var(--crm-tekst-2);
   background: var(--crm-tlo-3);
-  border-color: var(--crm-linia);
 }
 
 /* pola karty z ikona: firma, zglaszajacy, obslugujacy, czas, data */
@@ -326,6 +379,7 @@ content: "";
   gap: 5px;
   min-width: 0;
 }
+.crm-card-head .crm-czas { flex: none; }
 .crm-card-head .crm-ikona-txt {
   min-width: 0;
   overflow: hidden;
@@ -336,14 +390,61 @@ content: "";
 .crm-card-head .crm-firma .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
 .crm-card-head .crm-opiekun .crm-ikona { color: var(--crm-brand); }
 
-/* kolor tla nadawany z JS - tu tylko kształt */
+/* Uklad naglowka: wiersze z JS (.crm-card-top / .crm-row / .crm-foot) sa
+   splaszczone, a pola rozkladane siatka - jak wiersz listy w Mail:
+     firma ....................... data
+     zglaszajacy ................. czas
+     obslugujacy ................. status
+     numer  otwarte/zamkniete .... skrot do firmy                        */
+.crm-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "firma   firma   data"
+    "osoba   osoba   czas"
+    "opiekun opiekun chip"
+    "id      lock    skrot";
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: center;
+}
+.crm-card-head > .crm-card-top,
+.crm-card-head > .crm-row,
+.crm-card-head > .crm-foot { display: contents; }
+
+.crm-card-head .crm-firma   { grid-area: firma; }
+.crm-card-head .crm-data    { grid-area: data; justify-self: end; font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-card-head .crm-osoba   { grid-area: osoba; }
+.crm-card-head .crm-czas    { grid-area: czas; justify-self: end; margin: 0; font-size: var(--crm-t-mikro); }
+.crm-card-head .crm-opiekun { grid-area: opiekun; }
+.crm-card-head .crm-chip    { grid-area: chip; justify-self: end; margin: 0; }
+.crm-card-head .crm-id      { grid-area: id; margin: 0; }
+.crm-card-head .crm-lock    { grid-area: lock; justify-self: start; }
+.crm-card-head .crm-skrot   { grid-area: skrot; justify-self: end; }
+.crm-card-head > .crm-stale { grid-column: 1 / -1; margin-top: 4px; }
+
+/* ikony tylko tam, gdzie cos znacza - nazwa, osoba i data bronia sie same */
+.crm-card-head .crm-firma .crm-ikona,
+.crm-card-head .crm-osoba .crm-ikona,
+.crm-card-head .crm-data .crm-ikona { display: none; }
+.crm-card-head .crm-czas .crm-ikona,
+.crm-card-head .crm-opiekun .crm-ikona { width: 12px; height: 12px; }
+.crm-card-head .crm-opiekun .crm-ikona { color: var(--crm-tekst-3); }
+.crm-card-head .crm-lock {
+  padding: 0;
+  background: none;
+  font-weight: 500;
+}
+.crm-card-head .crm-lock.crm-lock-zamk { background: none; color: var(--crm-tekst-3); }
+
+/* kolor tla nadawany z JS - tu tylko ksztalt */
 .crm-chip {
+  flex: none;
   margin-left: auto;
   font-size: var(--crm-t-mikro);
   font-weight: 600;
-  letter-spacing: .2px;
   color: #fff;
-  padding: 3px 9px;
+  padding: 2px 9px;
   border-radius: var(--crm-r-pill);
   white-space: nowrap;
 }
@@ -354,9 +455,30 @@ content: "";
   font-weight: 500;
   color: var(--crm-c-uwaga);
   background: var(--crm-c-uwaga-tlo);
-  border-radius: var(--crm-r-s);
+  border-radius: var(--crm-r-xs);
   padding: 5px 8px;
 }
+
+/* skrot z karty zgloszenia do widoku firmy */
+.crm-skrot {
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--crm-tekst-3);
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--crm-r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--crm-e-szybko), background var(--crm-e-szybko),
+              color var(--crm-e-szybko);
+}
+.crm-card:hover .crm-skrot,
+.crm-skrot:focus-visible { opacity: 1; }
+.crm-skrot:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
+@media (hover: none) { .crm-skrot { opacity: 1; } }
 
 /* ---------- 7. ROZWINIETA KARTA ---------- */
 
@@ -369,7 +491,7 @@ content: "";
 .crm-meta {
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst-2);
-  line-height: 1.65;
+  line-height: 1.6;
   margin-bottom: 10px;
 }
 
@@ -378,7 +500,7 @@ content: "";
   font-size: var(--crm-t-mikro);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .5px;
+  letter-spacing: .04em;
   color: var(--crm-tekst-3);
   margin-bottom: 4px;
 }
@@ -390,17 +512,42 @@ content: "";
 .crm-select,
 .crm-szukaj {
   width: 100%;
+  min-height: var(--crm-h-pole);
   font-size: var(--crm-t-maly);
-  padding: 8px 10px;
-  background: var(--crm-tlo);
+  padding: 6px 10px;
+  background-color: var(--crm-tlo);
+  color: var(--crm-tekst);
   border: 1px solid var(--crm-linia-mocna);
   border-radius: var(--crm-r-s);
+  -webkit-appearance: none;
+  appearance: none;
   transition: border-color var(--crm-anim), box-shadow var(--crm-anim);
 }
-.crm-textarea { resize: vertical; line-height: 1.5; }
+.crm-textarea { resize: vertical; line-height: 1.45; padding: 8px 10px; }
 .crm-input,
 .crm-szukaj { margin-bottom: 10px; }
-.crm-select { background: var(--crm-tlo); color: var(--crm-tekst); }
+
+/* wlasna strzalka - taka sama w WebView2 i w Safari */
+.crm-select {
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%2377777D' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 5.5 5 2.5l3 3M2 8.5l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  cursor: pointer;
+}
+
+/* pole szukania z lupa */
+.crm-szukaj {
+  padding-left: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2377777D' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+}
+.crm-szukaj::-webkit-search-decoration { -webkit-appearance: none; }
+
+.crm-textarea::placeholder,
+.crm-input::placeholder,
+.crm-szukaj::placeholder { color: var(--crm-tekst-3); opacity: 1; }
 
 .crm-textarea:hover,
 .crm-input:hover,
@@ -416,6 +563,16 @@ content: "";
   box-shadow: var(--crm-ring);
 }
 
+.crm-textarea:disabled,
+.crm-input:disabled,
+.crm-select:disabled,
+.crm-szukaj:disabled {
+  background-color: var(--crm-tlo-2);
+  color: var(--crm-tekst-3);
+  border-color: var(--crm-linia);
+  cursor: default;
+}
+
 .crm-check {
   display: flex;
   align-items: center;
@@ -424,61 +581,75 @@ content: "";
   margin: 10px 0;
   cursor: pointer;
 }
-.crm-check input { accent-color: var(--crm-brand); width: 15px; height: 15px; }
+.crm-check input { accent-color: var(--crm-brand); width: 16px; height: 16px; margin: 0; flex: none; }
 .crm-check input:disabled + span { color: var(--crm-tekst-3); }
 
 .crm-filtry {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-bottom: 12px;
 }
+.crm-filtry > * { flex: 1 1 100%; }
+.crm-filtry > .crm-select { flex: 1 1 120px; width: auto; min-width: 0; }
+.crm-filtry > .crm-btn { flex: 0 0 auto; }
 .crm-filtry .crm-szukaj,
 .crm-filtry .crm-select { margin-bottom: 0; }
 
 /* ---------- 9. PRZYCISKI ---------- */
 
-/* przyciski w rzedzie tej samej wysokosci, takze gdy tekst jednego zawija sie do dwoch linii */
+/* przyciski w rzedzie tej samej wysokosci, takze gdy tekst jednego zawija sie */
 .crm-akcje { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; }
 .crm-akcje > .crm-komunikat { align-self: center; }
 
 .crm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: var(--crm-h-przycisk);
   background: var(--crm-brand);
   color: #fff;
-  border: 1px solid transparent; /* ta sama wysokosc co .crm-btn-cichy z ramka */
+  border: 1px solid transparent;
   border-radius: var(--crm-r-s);
-  padding: 7px 14px;
+  padding: 5px 14px;
   font-size: var(--crm-t-maly);
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
-  box-shadow: var(--crm-cien-1);
-  transition: background var(--crm-anim), box-shadow var(--crm-anim),
-              transform var(--crm-anim);
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko),
+              transform 90ms cubic-bezier(.25, .1, .25, 1);
 }
-.crm-btn:hover { background: var(--crm-brand-hover); box-shadow: var(--crm-cien-2); }
-.crm-btn:active { transform: translateY(1px); box-shadow: none; }
+.crm-btn .crm-ikona { width: 13px; height: 13px; }
+.crm-btn:hover { background: var(--crm-brand-hover); }
+.crm-btn:active { background: var(--crm-brand-wcisk); transform: scale(.97); }
 .crm-btn:disabled {
   background: var(--crm-tlo-3);
   color: var(--crm-tekst-3);
-  box-shadow: none;
   cursor: default;
   transform: none;
 }
 
 .crm-btn-ostrz { background: var(--crm-c-blad); }
-.crm-btn-ostrz:hover { background: var(--crm-c-blad-hover); }
+.crm-btn-ostrz:hover,
+.crm-btn-ostrz:active { background: var(--crm-c-blad-hover); }
 
+/* przycisk drugorzedny - szare wypelnienie, bez ramki */
 .crm-btn-cichy {
-  background: var(--crm-tlo);
-  color: var(--crm-tekst-2);
-  border: 1px solid var(--crm-linia-mocna);
-  box-shadow: none;
-}
-.crm-btn-cichy:hover {
-  background: var(--crm-tlo-3);
+  background: var(--crm-wypelnienie);
   color: var(--crm-tekst);
-  border-color: var(--crm-tekst-3);
-  box-shadow: none;
+  font-weight: 500;
+}
+.crm-btn-cichy:hover,
+.crm-btn-cichy:active { background: var(--crm-wypelnienie-2); color: var(--crm-tekst); }
+.crm-btn-cichy:disabled { background: var(--crm-wypelnienie); color: var(--crm-tekst-3); }
+
+.crm-btn-cichy.crm-btn-wcisniety {
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand);
+  font-weight: 600;
 }
 
 .crm-btn-nowe { background: var(--crm-brand); }
@@ -486,16 +657,18 @@ content: "";
 .crm-powrot {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   background: none;
   border: 0;
   color: var(--crm-brand);
   font-size: var(--crm-t-maly);
   font-weight: 500;
-  padding: 2px 0 10px;
+  padding: 2px 2px 10px;
   cursor: pointer;
+  transition: opacity var(--crm-e-szybko);
 }
-.crm-powrot:hover { color: var(--crm-brand-hover); text-decoration: underline; }
+.crm-powrot:hover { color: var(--crm-brand-hover); }
+.crm-powrot:active { opacity: .55; }
 
 /* ---------- 10. KOMUNIKATY ---------- */
 
@@ -505,35 +678,45 @@ content: "";
 
 .crm-ostrzezenie {
   margin-top: 10px;
-  padding: 9px 10px;
+  padding: 9px 11px;
   background: var(--crm-c-blad-tlo);
   border: 1px solid var(--crm-c-blad-linia);
   border-radius: var(--crm-r-s);
   font-size: var(--crm-t-mini);
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--crm-c-blad);
 }
 
 .crm-podpowiedz {
   display: none;
   font-size: var(--crm-t-mini);
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--crm-c-uwaga);
   background: var(--crm-c-uwaga-tlo);
   border: 1px solid var(--crm-c-uwaga-lin);
   border-radius: var(--crm-r-s);
-  padding: 7px 9px;
+  padding: 7px 10px;
   margin-bottom: 10px;
 }
 
 /* ---------- 11. PANEL "NOWE" ---------- */
 
 .crm-nowe {
-  background: var(--crm-brand-tlo);
-  border: 1px solid #D9E1F2;
+  background: var(--crm-tlo);
+  border: 1px solid transparent;
   border-radius: var(--crm-r-m);
-  padding: 11px 12px;
+  padding: 12px;
   margin-bottom: 12px;
+  box-shadow: var(--crm-cien-karta);
+}
+/* formularz otwarty wewnatrz karty to wstawka, nie karta w karcie */
+.crm-card .crm-nowe,
+.crm-kontakt-card .crm-nowe,
+.crm-kafel .crm-nowe,
+.crm-nota .crm-nowe,
+.crm-nowe .crm-nowe {
+  background: var(--crm-tlo-2);
+  box-shadow: none;
 }
 .crm-nowe-brak {
   background: var(--crm-c-uwaga-tlo);
@@ -546,69 +729,64 @@ content: "";
 .crm-nowe-info {
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst);
-  line-height: 1.55;
+  line-height: 1.5;
   margin-bottom: 8px;
 }
 .crm-nowe .crm-label { margin-top: 6px; }
 .crm-nowe .crm-select { margin-bottom: 10px; }
 
-/* ---------- 12. KARTA FIRMY ---------- */
+/* ---------- 12. KARTA FIRMY (lista firm) ---------- */
 
 .crm-firma-card {
   position: relative;
   background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-m);
-  padding: 10px 12px 11px 16px;
+  padding: 11px 12px;
   margin-bottom: 8px;
   cursor: pointer;
-  box-shadow: var(--crm-cien-1);
-  transition: box-shadow var(--crm-anim), border-color var(--crm-anim),
-              transform var(--crm-anim);
+  box-shadow: var(--crm-cien-karta);
+  transition: transform var(--crm-e-szybko), box-shadow var(--crm-e-skup);
 }
-.crm-firma-card::before {
+.crm-firma-card:hover { box-shadow: var(--crm-cien-2); }
+.crm-firma-card:active { transform: scale(.985); }
+.crm-firma-card { padding-right: 30px; }
+.crm-firma-card::after {
   content: "";
   position: absolute;
-  left: 5px;
-  top: 10px;
-  bottom: 10px;
-  width: var(--crm-szyna);
-  border-radius: var(--crm-r-pill);
-  background: var(--crm-brand);
-  transition: top var(--crm-anim), bottom var(--crm-anim);
+  right: 14px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-top: 1.8px solid var(--crm-linia-mocna);
+  border-right: 1.8px solid var(--crm-linia-mocna);
+  transform: translateY(-50%) rotate(45deg);
 }
-.crm-firma-card:hover {
-  border-color: var(--crm-linia-mocna);
-  box-shadow: var(--crm-cien-2);
-  transform: translateY(-1px);
-}
-.crm-firma-card:focus-visible { outline: 2px solid var(--crm-brand); outline-offset: 3px; }
 
-.crm-firma-top { display: flex; align-items: baseline; gap: 8px; }
+.crm-firma-top { display: flex; align-items: center; gap: 8px; }
 .crm-firma-nazwa {
   font-family: var(--crm-font-naglowek);
   font-weight: 600;
   font-size: var(--crm-t-baza);
-  letter-spacing: -.1px;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
 }
 
 .crm-tecs {
+  flex: none;
   margin-left: auto;
   font-size: var(--crm-t-mikro);
   font-weight: 600;
   background: var(--crm-brand-tlo);
   color: var(--crm-brand-hover);
   border-radius: var(--crm-r-pill);
-  padding: 3px 9px;
+  padding: 2px 9px;
   white-space: nowrap;
 }
 
-.crm-adres { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 4px; line-height: 1.55; }
+.crm-adres { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 5px; line-height: 1.45; }
 .crm-firma-opiekun { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 5px; }
 
 /* karta firmy z ikonami: nazwa, adres, opiekun */
-.crm-firma-card .crm-firma-top { align-items: center; }
 .crm-firma-card .crm-firma-nazwa,
 .crm-firma-card .crm-adres,
 .crm-firma-card .crm-firma-opiekun {
@@ -634,7 +812,7 @@ content: "";
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-top: 7px;
+  margin-top: 8px;
   padding: 2px 9px 2px 7px;
   border-radius: var(--crm-r-pill);
   background: var(--crm-brand-tlo);
@@ -645,37 +823,50 @@ content: "";
 .crm-firma-card .crm-firma-stat .crm-ikona { width: 12px; height: 12px; margin-top: 0; color: currentColor; }
 .crm-firma-card .crm-firma-stat-zero { background: var(--crm-tlo-3); color: var(--crm-tekst-3); }
 
-/* ---------- 13. PODNAWIGACJA (segmented control) ---------- */
+/* ---------- 13. PODNAWIGACJA I SEGMENT (segmented control) ---------- */
 
-.crm-podnav {
+.crm-podnav,
+.crm-segment {
   display: flex;
   gap: 2px;
-  padding: 3px;
-  margin-bottom: 12px;
-  background: var(--crm-tlo-2);
-  border: 1px solid var(--crm-linia);
-  border-radius: var(--crm-r-pill);
+  padding: 2px;
+  background: var(--crm-wypelnienie);
+  border-radius: 9px;
 }
-.crm-podnav-btn {
+.crm-podnav { margin-bottom: 12px; }
+.crm-segment { margin-bottom: 8px; }
+
+.crm-podnav-btn,
+.crm-segment-btn {
   flex: 1;
+  min-width: 0;
+  min-height: 26px;
   background: none;
   border: 0;
-  border-radius: var(--crm-r-pill);
-  padding: 6px 6px;
-  font-size: var(--crm-t-maly);
+  border-radius: 7px;
+  padding: 4px 6px;
   font-weight: 500;
-  color: var(--crm-tekst-2);
+  color: var(--crm-tekst);
   cursor: pointer;
-  transition: background var(--crm-anim), color var(--crm-anim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--crm-anim), color var(--crm-anim),
+              box-shadow var(--crm-anim), transform var(--crm-e-szybko);
 }
-.crm-podnav-btn:hover { color: var(--crm-tekst); background: rgba(27, 26, 25, .04); }
+.crm-podnav-btn { font-size: var(--crm-t-maly); }
+.crm-segment-btn { font-size: var(--crm-t-mini); }
+.crm-podnav-btn:hover,
+.crm-segment-btn:hover { background: rgba(118, 118, 128, .10); }
 
 .crm-podnav-aktywny,
-.crm-podnav-btn.crm-podnav-aktywny:hover {
+.crm-podnav-btn.crm-podnav-aktywny:hover,
+.crm-segment-akt,
+.crm-segment-btn.crm-segment-akt:hover {
   background: var(--crm-tlo);
-  color: var(--crm-brand);
+  color: var(--crm-tekst);
   font-weight: 600;
-  box-shadow: var(--crm-cien-1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04);
 }
 
 /* ---------- 14. KARTA KONTAKTU ---------- */
@@ -683,21 +874,10 @@ content: "";
 .crm-kontakt-card {
   position: relative;
   background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-m);
-  padding: 10px 12px 11px 16px;
+  padding: 11px 12px;
   margin-bottom: 8px;
-  box-shadow: var(--crm-cien-1);
-}
-.crm-kontakt-card::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 10px;
-  bottom: 10px;
-  width: 3px;
-  border-radius: var(--crm-r-pill);
-  background: var(--crm-brand);
+  box-shadow: var(--crm-cien-karta);
 }
 
 .crm-kontakt-linia {
@@ -717,28 +897,51 @@ content: "";
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.crm-ikona {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 .crm-kontakt-linia:hover { color: var(--crm-brand-hover); text-decoration: underline; }
 .crm-tel:hover { text-decoration: underline; }
 
 .crm-nieaktywny {
+  flex: none;
   margin-left: auto;
   font-size: var(--crm-t-mikro);
   font-weight: 500;
-  color: var(--crm-tekst-3);
-  background: var(--crm-tlo-2);
-  border: 1px solid var(--crm-linia);
+  color: var(--crm-tekst-2);
+  background: var(--crm-tlo-3);
   border-radius: var(--crm-r-pill);
   padding: 2px 8px;
+}
+
+/* firma kontaktu w wyszukiwarce kontaktow */
+.crm-kontakt-firma {
+  display: inline-block;
+  background: none;
+  border: 0;
+  padding: 2px 0 0;
+  font-size: var(--crm-t-mini);
+  font-weight: 600;
+  color: var(--crm-brand);
+  cursor: pointer;
+}
+.crm-kontakt-firma:hover { color: var(--crm-brand-hover); text-decoration: underline; }
+
+/* dwa przyciski w rzedzie na waskim panelu */
+.crm-kontakt-card .crm-akcje { flex-wrap: wrap; }
+
+/* szukajka + "+ kontakt" w jednym rzedzie */
+.crm-kontakt-pasek {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  margin-bottom: 10px;
+}
+.crm-kontakt-pasek .crm-szukaj {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.crm-kontakt-pasek .crm-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* ---------- 15. KOPIOWANIE ---------- */
@@ -749,171 +952,148 @@ content: "";
 .crm-blysk {
   position: absolute;
   right: 0;
-  top: -20px;
-  background: var(--crm-tekst);
+  top: -22px;
+  background: rgba(29, 29, 31, .92);
   color: #fff;
   font-size: var(--crm-t-mikro);
   font-weight: 500;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: var(--crm-r-pill);
   white-space: nowrap;
-  box-shadow: var(--crm-cien-2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .18);
   z-index: 5;
-  animation: crm-blysk-in 160ms cubic-bezier(.33, 0, .2, 1);
-}
-@keyframes crm-blysk-in {
-  from { opacity: 0; transform: translateY(3px); }
-  to   { opacity: 1; transform: none; }
+  pointer-events: none;
+  animation: crm-wynurz 140ms cubic-bezier(.2, .8, .2, 1);
 }
 
-/* ---------- 16. PREFERENCJE UZYTKOWNIKA ---------- */
+/* ---------- 16. DOLNY PASEK NAWIGACJI (tab bar) ---------- */
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 1ms !important;
-    transition-duration: 1ms !important;
-  }
-  .crm-card:has(.crm-card-head:hover),
-  .crm-firma-card:hover { transform: none; }
+.crm-dol {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--crm-szklo);
+  -webkit-backdrop-filter: var(--crm-szklo-filtr);
+  backdrop-filter: var(--crm-szklo-filtr);
+  border-top: 1px solid var(--crm-linia);
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
+.crm-dol.crm-dol-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
-/* Panel bywa wezszy niz 320 px przy podzielonym oknie Outlooka */
-@media (max-width: 300px) {
-  .crm-brand   { padding: 10px 10px 8px; }
-  .crm-nav     { margin: 0 0 10px; padding: 8px 10px; }
-  #item-subject { padding: 0 10px 16px; }
-  .crm-podnav-btn { font-size: var(--crm-t-mini); padding: 6px 2px; }
+.crm-dol-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 2px 6px;
+  background: none;
+  border: 0;
+  color: var(--crm-tekst-3);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--crm-e-szybko);
 }
-/* ================================================================
-   17. RUCH - wariant "skupienie"
-   Dopisz na koncu src/taskpane/taskpane.css.
-   Zastepuje poprzedni plik z animacjami (kaskada) w calosci.
-
-   Zasada: ruch niesie hierarchie. Kiedy uzytkownik cos otwiera,
-   otoczenie sie wycofuje. Nic nie rusza sie samo z siebie.
-   ================================================================ */
-
-:root {
-  --crm-e-skup:  260ms cubic-bezier(.16, 1, .3, 1);
-  --crm-e-szybko: 130ms cubic-bezier(.33, 0, .2, 1);
+.crm-dol-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--crm-e-szybko);
 }
+.crm-dol-btn span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crm-dol-btn:focus-visible { outline-offset: -3px; border-radius: var(--crm-r-s); }
 
-/* ---------- 17a. wejscie widoku ---------- */
+@media (hover: hover) {
+  .crm-dol-btn:hover { color: var(--crm-tekst); }
+}
+.crm-dol-btn:active svg { transform: scale(.9); }
 
-/* jedno wspolne pojawienie sie, bez kaskady - widok wynurza sie
-   w calosci, a nie sklada z kawalkow */
+/* aktywny widok: sam kolor akcentu, bez belek i tla */
+.crm-dol-btn.crm-dol-akt { color: var(--crm-brand); font-weight: 600; }
+
+/* miejsce na pasek - tresc nie chowa sie pod nim */
+#app-body #item-subject { padding-bottom: 76px; }
+
+/* ---------- 17. RUCH ---------- */
+
+/* 17a. wejscie widoku - calosc wynurza sie raz, bez kaskady */
 @keyframes crm-wynurz {
-  from { opacity: 0; transform: scale(.99); }
+  from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }
 }
 
 .crm-card,
 .crm-firma-card,
-.crm-kontakt-card {
-  animation: crm-wynurz 180ms cubic-bezier(.16, 1, .3, 1) backwards;
+.crm-kontakt-card,
+.crm-kafel,
+.crm-nota,
+.crm-szkolenie {
+  animation: crm-wynurz 220ms cubic-bezier(.2, .8, .2, 1) backwards;
 }
 
-/* ---------- 17b. skupienie na rozwinietej karcie ---------- */
-
-.crm-card {
-  transition: opacity var(--crm-e-skup), transform var(--crm-e-skup),
-              box-shadow var(--crm-e-skup), border-color var(--crm-e-szybko);
-}
-
-/* dziala bez JS - kontener sam widzi, ze ktoras karta jest otwarta */
+/* 17b. skupienie na rozwinietej karcie - otoczenie sie wycofuje */
 #item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open) {
-  opacity: .42;
-  transform: scale(.97);
+  opacity: .5;
   box-shadow: none;
 }
+#item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open):hover { opacity: .85; }
+#item-subject:has(.crm-card.crm-open) .crm-card.crm-open { box-shadow: var(--crm-cien-fokus); }
 
-#item-subject:has(.crm-card.crm-open) .crm-card.crm-open {
-  transform: none;
-  box-shadow: 0 6px 18px rgba(27, 26, 25, .13);
-}
-
-/* przygaszone karty nie reaguja na hover, ale nadal sa klikalne */
-#item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open):hover {
-  opacity: .72;
-}
-
-/* hover bez podnoszenia - unoszenie kolidowaloby ze skalowaniem;
-   nadpisuje transform z sekcji 6 */
-.crm-card:has(.crm-card-head:hover) {
-  transform: none;
-}
-
-/* ---------- 17c. odslanianie szczegolow ---------- */
-
+/* 17c. odslanianie szczegolow */
 @keyframes crm-odslon {
   from { clip-path: inset(0 0 100% 0); opacity: .3; }
   to   { clip-path: inset(0 0 0 0);    opacity: 1; }
 }
+.crm-detale { animation: crm-odslon 240ms cubic-bezier(.2, .8, .2, 1) backwards; }
 
-.crm-detale {
-  animation: crm-odslon 200ms cubic-bezier(.16, 1, .3, 1) backwards;
-}
-
-/* ---------- 17d. karta firmy i kontaktu ---------- */
-
-.crm-firma-card {
-  transition: transform var(--crm-e-szybko), box-shadow var(--crm-e-skup),
-              border-color var(--crm-e-szybko);
-}
-/* nadpisuje unoszenie z sekcji 12 - w tym jezyku wejscie w firme
-   to przyblizenie, nie podskok */
-.crm-firma-card:hover { transform: none; }
-.crm-firma-card:active { transform: scale(.985); }
-
-.crm-kontakt-card { transition: border-color var(--crm-e-szybko); }
-.crm-kontakt-card:hover { border-color: var(--crm-linia-mocna); }
-
-/* ---------- 17e. ladowanie ---------- */
-
-/* dodaj klase crm-laduje na #item-subject przed await na Graph,
-   zdejmij po odpowiedzi - lista wycofuje sie tym samym ruchem,
-   ktorym wycofuje sie przy rozwinieciu karty */
+/* 17d. ladowanie - dodaj crm-laduje na #item-subject przed await na Graph */
 #item-subject.crm-laduje .crm-card,
 #item-subject.crm-laduje .crm-firma-card,
 #item-subject.crm-laduje .crm-kontakt-card {
-  opacity: .38;
-  transform: scale(.985);
+  opacity: .4;
   pointer-events: none;
-  transition: opacity var(--crm-e-skup), transform var(--crm-e-skup);
+  transition: opacity var(--crm-e-skup);
 }
 
 .crm-status.crm-laduje { animation: crm-oddech 1.3s ease-in-out infinite; }
 @keyframes crm-oddech {
   0%, 100% { opacity: 1; }
-  50%      { opacity: .45; }
+  50%      { opacity: .4; }
 }
 
-/* ---------- 17f. zapis ---------- */
-
-/* dodaj crm-zapisano na .crm-card po udanym PATCH i zdejmij po 700 ms:
-   karta na moment podchodzi blizej, potem wraca */
+/* 17e. zapis - crm-zapisano na .crm-card po udanym PATCH, zdejmij po 700 ms */
 @keyframes crm-potwierdz {
-  0%   { transform: none;        box-shadow: 0 0 0 0 rgba(16, 124, 16, .40); }
-  35%  { transform: scale(1.012); box-shadow: 0 0 0 5px rgba(16, 124, 16, .22); }
-  100% { transform: none;        box-shadow: 0 0 0 10px rgba(16, 124, 16, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(16, 124, 16, .40); }
+  35%  { box-shadow: 0 0 0 4px rgba(16, 124, 16, .22); }
+  100% { box-shadow: 0 0 0 9px rgba(16, 124, 16, 0); }
 }
 #item-subject:has(.crm-card.crm-open) .crm-card.crm-zapisano,
 .crm-card.crm-zapisano {
-  animation: crm-potwierdz 700ms cubic-bezier(.16, 1, .3, 1);
+  animation: crm-potwierdz 700ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .crm-komunikat.crm-ok,
 .crm-komunikat.crm-blad {
-  animation: crm-wynurz 160ms ease-out both;
+  animation: crm-wynurz 180ms ease-out both;
 }
 
-/* ---------- 17g. blad walidacji ---------- */
-
-/* bez szarpania: ostrzezenie odslania sie tym samym ruchem co
-   szczegoly, a karta dostaje czerwony pierscien */
-.crm-ostrzezenie {
-  animation: crm-odslon 180ms cubic-bezier(.16, 1, .3, 1) both;
-}
+/* 17f. blad walidacji - bez szarpania, czerwony pierscien */
+.crm-ostrzezenie { animation: crm-odslon 200ms cubic-bezier(.2, .8, .2, 1) both; }
 
 @keyframes crm-uwaga {
   0%   { box-shadow: 0 0 0 0 rgba(168, 0, 0, .35); }
@@ -921,45 +1101,28 @@ content: "";
 }
 .crm-card.crm-blad-walidacji { animation: crm-uwaga 620ms ease-out; }
 
-/* ---------- 17h. drobne ---------- */
-
-.crm-btn { transition: background var(--crm-e-szybko), box-shadow var(--crm-e-szybko),
-                       transform 80ms cubic-bezier(.33, 0, .2, 1); }
-.crm-btn:active { transform: scale(.97); }
-
+/* 17g. wcisniecie */
 .crm-nav-btn:active,
-.crm-podnav-btn:active { transform: scale(.97); }
+.crm-podnav-btn:active,
+.crm-segment-btn:active,
+.crm-chip-wybor:active,
+.crm-zakladka:active { transform: scale(.97); }
 
-.crm-blysk { animation: crm-wynurz 140ms cubic-bezier(.16, 1, .3, 1); }
+/* ---------- 18. WIDOK FIRMY - NAGLOWEK ---------- */
 
-/* ---------- 17i. uzupelnienie sekcji 16 ---------- */
-
-@media (prefers-reduced-motion: reduce) {
-  .crm-card, .crm-firma-card, .crm-kontakt-card,
-  .crm-detale, .crm-ostrzezenie, .crm-komunikat,
-  .crm-blysk, .crm-status.crm-laduje {
-    animation: none !important;
-  }
-  .crm-card.crm-zapisano, .crm-card.crm-blad-walidacji { animation: none !important; }
-  .crm-detale { clip-path: none; opacity: 1; }
-  /* przygaszenie zostaje - to informacja, nie dekoracja - ale bez skalowania */
-  #item-subject:has(.crm-card.crm-open) .crm-card:not(.crm-open),
-  #item-subject.crm-laduje .crm-card { transform: none !important; }
-}
-/* dopisz na koncu src/taskpane/taskpane.css */
-
-/* ---------- naglowek firmy ---------- */
 .crm-firma-head { margin-bottom: 10px; }
 
 .crm-firma-tytul {
-  font-size: 15px;
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
   font-weight: 600;
-  color: #1F2937;
+  letter-spacing: -.02em;
+  color: var(--crm-tekst);
   margin-top: 4px;
 }
 .crm-firma-pelna {
-  font-size: 11px;
-  color: #6B7280;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
   margin-top: 2px;
 }
 
@@ -969,66 +1132,222 @@ content: "";
   gap: 4px;
   margin-top: 8px;
 }
+/* kolory pastylek nadawane z JS */
 .crm-pill {
-  display: inline-block;
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--crm-r-pill);
   white-space: nowrap;
 }
+.crm-pill .crm-ikona { width: 11px; height: 11px; flex: none; }
 
 .crm-firma-akcje {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   margin-top: 8px;
 }
 .crm-akcja {
+  position: relative;
   flex: 1;
-  background: #F3F4F6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: var(--crm-h-przycisk);
+  background: var(--crm-wypelnienie);
   border: 0;
-  border-radius: 6px;
-  padding: 7px 4px;
-  font-family: inherit;
-  font-size: 10px;
-  color: #374151;
+  border-radius: var(--crm-r-s);
+  padding: 6px 4px;
+  font-size: var(--crm-t-mikro);
+  font-weight: 500;
+  color: var(--crm-brand);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  position: relative;
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
 }
-.crm-akcja:hover { background: #EEF0FC; }
+.crm-akcja:hover { background: var(--crm-brand-tlo); color: var(--crm-brand-hover); }
+.crm-akcja .crm-ikona { width: 13px; height: 13px; flex: none; }
+.crm-akcja span { overflow: hidden; text-overflow: ellipsis; }
 
 .crm-liczniki {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   margin-top: 8px;
 }
 .crm-licznik {
   flex: 1;
-  background: #F9FAFB;
-  border-radius: 6px;
-  padding: 6px 8px;
+  min-width: 0;
+  background: var(--crm-tlo-2);
+  border-radius: var(--crm-r-s);
+  padding: 7px 9px;
 }
 .crm-licznik-lbl {
-  font-size: 9px;
-  color: #9CA3AF;
+  gap: 4px;
+  font-size: var(--crm-t-mikro);
+  color: var(--crm-tekst-3);
   white-space: nowrap;
 }
+.crm-licznik-lbl .crm-ikona { width: 11px; height: 11px; }
 .crm-licznik-val {
-  font-size: 13px;
+  font-size: var(--crm-t-baza);
   font-weight: 600;
   margin-top: 2px;
 }
 
-/* ---------- zakladki: pastylki z ikonami jak pasek w Power Apps ---------- */
-.crm-zakladki {
+/* pola z ikona: ikona + tekst w jednej linii */
+.crm-ik {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-top: 10px;
-  padding-bottom: 8px;
+  min-width: 0;
 }
+.crm-ik .crm-ikona { color: var(--crm-tekst-3); }
+.crm-ik .crm-ikona-txt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* karta z danymi firmy */
+.crm-firma-karta {
+  background: var(--crm-tlo);
+  border-radius: var(--crm-r-m);
+  padding: 11px 12px 12px;
+  margin-top: 6px;
+  box-shadow: var(--crm-cien-karta);
+}
+.crm-firma-karta .crm-firma-tytul { margin-top: 0; }
+.crm-firma-karta .crm-firma-tytul .crm-ikona { width: 17px; height: 17px; color: var(--crm-brand); }
+.crm-firma-karta .crm-firma-tytul .crm-ikona-txt { white-space: normal; }
+.crm-firma-karta .crm-firma-pelna { margin: 2px 0 0 23px; }
+.crm-firma-adres {
+  margin-top: 6px;
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst-2);
+}
+
+/* ---------- 19. KARTA FIRMY "hd" (naglowek jak hdCard w Power Apps) ---------- */
+
+.crm-firma-karta.crm-hd { border: 0; border-radius: var(--crm-r-l); padding: 12px; }
+.crm-hd-gora { display: flex; align-items: flex-start; gap: 10px; }
+.crm-hd-bud {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand);
+}
+.crm-hd-bud .crm-ikona { width: 20px; height: 20px; }
+.crm-hd-kto { flex: 1; min-width: 0; }
+.crm-hd-nazwa {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  color: var(--crm-tekst);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.crm-hd-opiekun { margin-top: 5px; padding: 3px 10px; border-radius: var(--crm-r-pill); font-size: var(--crm-t-mini); max-width: 100%; }
+.crm-hd-opiekun > span { overflow: hidden; text-overflow: ellipsis; }
+.crm-hd-opiekun {
+  color: var(--crm-brand-hover) !important;
+  background: var(--crm-brand-tlo) !important;
+}
+
+.crm-hd-chipy { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.crm-hd-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: var(--crm-h-przycisk);
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-wypelnienie);
+  font-size: var(--crm-t-mini);
+  color: var(--crm-tekst);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
+}
+.crm-hd-chip .crm-ikona { width: 15px; height: 15px; color: var(--crm-tekst-3); flex: none; }
+.crm-hd-chip > span:not(.crm-blysk) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-hd-adres:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
+.crm-hd-adres:hover .crm-ikona { color: var(--crm-brand); }
+.crm-hd-nip:hover { background: var(--crm-wypelnienie-2); }
+.crm-hd-chipy > .crm-pill { padding: 4px 10px; border-radius: var(--crm-r-s); }
+
+.crm-hd-kafle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 10px; }
+.crm-hd-lewa { display: flex; flex-direction: column; gap: 6px; }
+.crm-hd-kafel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo-2);
+}
+.crm-hd-kafel-ik { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--crm-r-s); }
+.crm-hd-kafel-ik .crm-ikona { width: 18px; height: 18px; }
+.crm-hd-kafel-txt { min-width: 0; }
+.crm-hd-kafel-lbl { font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
+.crm-hd-kafel-val { font-size: var(--crm-t-maly); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.crm-hd-godz { padding: 8px 10px; border-radius: var(--crm-r-s); background: var(--crm-tlo-2); }
+/* uwagi do firmy w rozwijanych szczegolach (dawna zakladka Uwagi) */
+.crm-hd-uwagi { margin-top: 8px; padding: 8px 10px; border-radius: var(--crm-r-s); background: var(--crm-tlo-2); }
+.crm-hd-uwagi .crm-uwagi, .crm-hd-uwagi .crm-pusto { margin: 0; padding: 0; background: none; border: 0; text-align: left; }
+.crm-hd-godz-lbl { font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); margin-bottom: 4px; }
+.crm-hd-godz-lbl .crm-ikona { width: 12px; height: 12px; }
+.crm-hd-godz-rzad { display: flex; align-items: center; gap: 5px; font-size: var(--crm-t-mini); line-height: 1.7; }
+.crm-hd-kropka { font-size: 9px; }
+.crm-hd-godz-nazwa { flex: 1; min-width: 0; color: var(--crm-tekst); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crm-hd-godz-val { font-weight: 600; white-space: nowrap; }
+.crm-hd-rozwin {
+  display: block;
+  margin-top: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--crm-t-mini);
+  font-weight: 500;
+  color: var(--crm-brand);
+  cursor: pointer;
+}
+.crm-hd-rozwin:hover { color: var(--crm-brand-hover); }
+.crm-hd-alert { margin-top: 8px; padding: 4px 10px; border-radius: var(--crm-r-s); }
+
+/* ---------- 20. ZAKLADKI FIRMY ---------- */
+
+/* rowna siatka 3 kolumn: Szanse i TECS wypadaja obok siebie w drugim rzedzie */
+.crm-zakladki {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;                       /* przerwy = linie miedzy komorkami */
+  margin: 10px 0 8px;
+  background: var(--crm-linia);
+  border-radius: var(--crm-r-m);
+  overflow: hidden;
+  box-shadow: var(--crm-cien-karta);
+}
+.crm-zakladki-para { display: contents; }
+.crm-zakladki-akcje { display: flex; gap: 6px; padding-bottom: 8px; }
+
 .crm-zakladka {
   flex: 1 1 auto;
   display: inline-flex;
@@ -1036,199 +1355,261 @@ content: "";
   justify-content: center;
   gap: 6px;
   min-width: 0;
-  background: #fff;
-  border: 1px solid #E5E7EB;
-  border-radius: 10px;
-  padding: 7px 10px;
-  font-family: inherit;
-  font-size: var(--crm-t-maly);
-  color: #374151;
+  min-height: 32px;
+  background: var(--crm-tlo);
+  border: 0;
+  border-radius: var(--crm-r-s);
+  padding: 6px;
+  font-size: var(--crm-t-mini);
+  font-weight: 500;
+  color: var(--crm-tekst);
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--crm-e-szybko), border-color var(--crm-e-szybko), color var(--crm-e-szybko);
+  box-shadow: var(--crm-cien-karta);
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko),
+              box-shadow var(--crm-e-szybko), transform var(--crm-e-szybko);
 }
-.crm-zakladka .crm-ikona { width: 15px; height: 15px; color: #4B5563; }
-.crm-zakladka:hover { background: #F7F8FE; border-color: #C7CCF3; color: #5B6CDB; }
-.crm-zakladka:hover .crm-ikona { color: #5B6CDB; }
+.crm-zakladki-akcje .crm-zakladka { flex: 1 1 0; }
+.crm-zakladka > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crm-zakladka .crm-ikona { width: 15px; height: 15px; color: var(--crm-tekst-3); }
+.crm-zakladka:hover { color: var(--crm-brand); }
+.crm-zakladka:hover .crm-ikona { color: var(--crm-brand); }
+
 .crm-zakladka-akt,
 .crm-zakladka-akt:hover {
-  background: #EEF0FC;
-  border-color: #A5AEEC;
-  color: #5B6CDB;
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand);
   font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--crm-brand-linia);
 }
-.crm-zakladka-akt .crm-ikona { color: #5B6CDB; }
-/* akcja wypelniona - jak "Nowy Opps TECS" w Power Apps */
+.crm-zakladka-akt .crm-ikona { color: var(--crm-brand); }
+
+/* akcja wypelniona - "Nowy Opps" */
 .crm-zakladka-glowna,
-.crm-zakladka-glowna:hover { background: #5B6CDB; border-color: #5B6CDB; color: #fff; font-weight: 600; }
-.crm-zakladka-glowna:hover { background: #4A5AC9; border-color: #4A5AC9; }
+.crm-zakladka-glowna:hover {
+  background: var(--crm-brand);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: none;
+}
+.crm-zakladka-glowna:hover { background: var(--crm-brand-hover); }
 .crm-zakladka-glowna .crm-ikona,
 .crm-zakladka-glowna:hover .crm-ikona { color: #fff; }
 
-/* ---------- segment wewnatrz zakladki ---------- */
-.crm-segment {
-  display: flex;
+/* komorki zgrupowanej siatki: ikona nad nazwa, pelna nazwa bez ucinania */
+.crm-zakladki .crm-zakladka {
+  flex-direction: column;
   gap: 3px;
-  margin-bottom: 8px;
+  min-height: 48px;
+  padding: 7px 2px 6px;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: var(--crm-t-mikro);
+  transform: none;
 }
-.crm-segment-btn {
-  flex: 1;
-  background: #fff;
-  border: 1px solid #D1D5DB;
-  border-radius: 6px;
-  padding: 6px 2px;
-  font-family: inherit;
-  font-size: 10px;
-  color: #374151;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.crm-segment-akt {
-  background: #3860B2;
-  border-color: #3860B2;
-  color: #fff;
-  font-weight: 600;
-}
+.crm-zakladki .crm-zakladka .crm-ikona { width: 17px; height: 17px; }
+.crm-zakladki .crm-zakladka:hover { background: var(--crm-tlo-2); }
+.crm-zakladki .crm-zakladka-akt,
+.crm-zakladki .crm-zakladka-akt:hover { background: var(--crm-brand-tlo); box-shadow: none; }
+.crm-zakladki .crm-zakladka:focus-visible { outline-offset: -2px; }
 
-/* ---------- kafel uniwersalny ---------- */
+/* ---------- 21. KAFEL UNIWERSALNY (TECS / szanse / posiadane) ---------- */
+
+/* szyna po lewej w kolorze etapu - kolor nadawany z JS */
 .crm-kafel {
-  background: #fff;
-  border: 1px solid #E5E7EB;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-.crm-kafel-nazwa {
-  font-size: 12px;
-  font-weight: 600;
-  color: #1F2937;
+  background: var(--crm-tlo);
+  border: 0;
+  border-left: var(--crm-szyna) solid var(--crm-brand);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 11px;
+  margin-bottom: 8px;
+  box-shadow: var(--crm-cien-karta);
 }
 .crm-kafel-rzad {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 4px;
 }
+.crm-kafel .crm-kafel-rzad + .crm-kafel-rzad,
+.crm-kafel .crm-kafel-rzad + .crm-ik { margin-top: 6px; }
+.crm-kafel .crm-pill { flex: none; font-weight: 600; }
+.crm-kafel > .crm-pill { margin-top: 6px; }
+.crm-kafel-nazwa {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-maly);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--crm-tekst);
+}
+.crm-kafel-nazwa .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
 .crm-kafel-wartosc {
-  font-size: 13px;
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
   font-weight: 600;
-  color: #1F2937;
+  letter-spacing: -.02em;
+  color: var(--crm-tekst);
 }
-.crm-kafel-meta {
-  font-size: 10px;
-  margin-top: 4px;
-}
-.crm-kafel-opps {
-  font-size: 9px;
-  color: #9CA3AF;
-  margin-top: 2px;
-}
+.crm-kafel-wartosc .crm-ikona { color: var(--crm-tekst-3); }
+.crm-kafel-meta { font-size: var(--crm-t-mini); margin-top: 6px; }
+.crm-kafel-meta .crm-ikona { color: currentColor; }
+.crm-kafel-opps { font-size: var(--crm-t-mini); color: var(--crm-tekst-3); margin-top: 4px; }
 .crm-licencje {
-  font-size: 12px;
+  font-size: var(--crm-t-maly);
   font-weight: 600;
-  color: #0D9488;
+  color: var(--crm-morski);
   white-space: nowrap;
 }
+.crm-kafel .crm-nowe { margin: 8px 0 0; }
+.crm-kafel .crm-akcje .crm-ikona { width: 13px; height: 13px; }
 
 .crm-tor {
   height: 4px;
-  background: #EEF0F3;
+  background: var(--crm-wypelnienie);
   border-radius: 2px;
   margin-top: 6px;
   overflow: hidden;
 }
 .crm-bar { height: 4px; border-radius: 2px; }
 
-/* ---------- notatki ---------- */
+/* ---------- 22. NOTATKI ---------- */
+
 .crm-nota {
-  background: #FAFAFB;
-  border: 1px solid #E5E7EB;
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  background: var(--crm-tlo);
+  border-radius: var(--crm-r-m);
+  padding: 10px 12px 11px;
+  margin-bottom: 8px;
+  box-shadow: var(--crm-cien-karta);
 }
-.crm-nota-top { display: flex; justify-content: space-between; }
-.crm-nota-data {
-  font-size: 11px;
+.crm-nota-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.crm-nota-data { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
+.crm-nota-prawo { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+.crm-nota-typ {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--crm-t-mikro);
   font-weight: 600;
-  color: #1F2937;
+  padding: 2px 9px;
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand-hover);
+  white-space: nowrap;
 }
-.crm-nota-osoba {
-  font-size: 10px;
-  color: #6B7280;
-  margin-top: 2px;
-}
+.crm-nota-typ .crm-ikona { width: 11px; height: 11px; flex: none; }
+.crm-nota-osoba { margin-top: 6px; font-size: var(--crm-t-mini); color: var(--crm-tekst); }
+.crm-nota-osoba .crm-ikona { color: var(--crm-brand); }
+.crm-nota-fu { margin-top: 6px; }
 .crm-nota-tresc {
-  font-size: 11px;
-  color: #374151;
-  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: var(--crm-t-mini);
+  line-height: 1.45;
+  color: var(--crm-tekst);
+  background: var(--crm-tlo-2);
+  border-radius: var(--crm-r-s);
+}
+.crm-nota-tresc .crm-ikona { flex: none; margin-top: 2px; color: var(--crm-tekst-3); }
+.crm-nota-tresc-txt {
+  min-width: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-height: 120px;
   overflow-y: auto;
 }
-.crm-nota-autor {
-  font-size: 9px;
-  color: #9CA3AF;
-  margin-top: 6px;
-}
+.crm-nota-autor { margin-top: 7px; font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-nota-autor .crm-ikona { width: 12px; height: 12px; }
 
-/* ---------- uwagi ---------- */
-.crm-uwagi {
-  font-size: 11px;
-  color: #374151;
-  white-space: pre-wrap;
-  background: #FAFAFB;
-  border: 1px solid #E5E7EB;
-  border-radius: 6px;
-  padding: 10px;
-}
-/* skrót z karty zgłoszenia do widoku firmy */
-.crm-skrot {
+/* notatki wewnatrz kafla szansy - wstawka, nie osobna karta */
+.crm-szansa-noty { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.crm-szansa-noty .crm-nota { margin: 0; background: var(--crm-tlo-2); box-shadow: none; }
+.crm-szansa-noty .crm-nota-tresc { background: var(--crm-tlo); }
+
+/* kosz i olowek - widoczne po najechaniu */
+.crm-usun {
   background: none;
   border: 0;
   color: var(--crm-tekst-3);
-  font-size: var(--crm-t-mikro);
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: var(--crm-r-pill);
+  font-size: var(--crm-t-maly);
+  line-height: 1;
+  padding: 4px 5px;
+  border-radius: var(--crm-r-xs);
   cursor: pointer;
-  white-space: nowrap;
   opacity: 0;
   transition: opacity var(--crm-e-szybko), background var(--crm-e-szybko),
               color var(--crm-e-szybko);
 }
-.crm-card:hover .crm-skrot { opacity: 1; }
-.crm-skrot:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
-.crm-skrot:focus-visible { opacity: 1; }
-/* ---------- 19. WYBOR Z CHIPOW (rodzaj notatki, szybkie terminy) ---------- */
+.crm-nota:hover .crm-usun,
+.crm-usun:focus-visible { opacity: 1; }
+@media (hover: none) { .crm-usun { opacity: 1; } }
+.crm-usun:hover { background: var(--crm-c-blad-tlo); color: var(--crm-c-blad); }
+.crm-usun .crm-ikona,
+.crm-edytuj .crm-ikona { width: 13px; height: 13px; display: block; }
+.crm-usun.crm-edytuj:hover { color: var(--crm-brand); background: var(--crm-brand-tlo); }
+
+.crm-nota-usun {
+  margin-top: 10px;
+  padding: 9px 11px;
+  background: var(--crm-c-blad-tlo);
+  border: 1px solid var(--crm-c-blad-linia);
+  border-radius: var(--crm-r-s);
+  font-size: var(--crm-t-mini);
+  line-height: 1.45;
+  color: var(--crm-c-blad);
+  animation: crm-odslon 200ms cubic-bezier(.2, .8, .2, 1) both;
+}
+.crm-nota-usun .crm-akcje { margin-top: 8px; }
+
+/* uwagi */
+.crm-uwagi {
+  font-size: var(--crm-t-mini);
+  line-height: 1.45;
+  color: var(--crm-tekst);
+  white-space: pre-wrap;
+  background: var(--crm-tlo);
+  border-radius: var(--crm-r-m);
+  padding: 11px 12px;
+  box-shadow: var(--crm-cien-karta);
+}
+
+/* zapis otwartego maila do notatki (rodzaj "mail") */
+.crm-mail-opcja {
+  margin: 8px 0 4px;
+  padding: 2px 10px 8px;
+  background: var(--crm-tlo);
+  border: 1px dashed var(--crm-linia-mocna);
+  border-radius: var(--crm-r-s);
+}
+.crm-mail-opcja-info { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 2px; }
+.crm-mail-opcja-info .crm-ikona { color: var(--crm-brand); }
+.crm-mail-opcja-info .crm-ikona-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 23. WYBOR Z CHIPOW (rodzaj notatki, szybkie terminy) ---------- */
 
 .crm-chipy {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 6px;
   margin-bottom: 10px;
 }
 
 .crm-chip-wybor {
+  min-height: 28px;
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia-mocna);
   border-radius: var(--crm-r-pill);
-  padding: 5px 11px;
+  padding: 4px 11px;
   font-size: var(--crm-t-mini);
   font-weight: 500;
-  color: var(--crm-tekst-2);
+  color: var(--crm-tekst);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--crm-e-szybko), color var(--crm-e-szybko),
-              border-color var(--crm-e-szybko);
+              border-color var(--crm-e-szybko), transform var(--crm-e-szybko);
 }
-.crm-chip-wybor:hover {
-  background: var(--crm-tlo-3);
-  color: var(--crm-tekst);
-  border-color: var(--crm-tekst-3);
-}
-.crm-chip-wybor:active { transform: scale(.97); }
+.crm-chip-wybor:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
 
 /* rodzaj notatki - siatka rownych kafelkow zamiast chipow roznej dlugosci */
 .crm-chipy-rowne {
@@ -1239,7 +1620,8 @@ content: "";
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
-  padding: 5px 6px;
+  padding: 4px 6px;
+  border-radius: var(--crm-r-s);
 }
 
 .crm-chip-akt,
@@ -1250,57 +1632,24 @@ content: "";
   font-weight: 600;
 }
 
-/* dwa przyciski w rzedzie na waskim panelu */
-.crm-kontakt-card .crm-akcje { flex-wrap: wrap; }
+/* rodzaje notatek z ikona */
+.crm-chip-rodzaj {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+}
+.crm-chip-rodzaj .crm-ikona { width: 13px; height: 13px; flex: none; }
+.crm-chip-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-@media (prefers-reduced-motion: reduce) {
-  .crm-chip-wybor:active { transform: none; }
-}
-/* ---------- 20. USUWANIE NOTATKI ---------- */
-
-.crm-usun {
-  background: none;
-  border: 0;
-  color: var(--crm-tekst-3);
-  font-size: var(--crm-t-maly);
-  line-height: 1;
-  padding: 3px 5px;
-  border-radius: var(--crm-r-s);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--crm-e-szybko), background var(--crm-e-szybko),
-              color var(--crm-e-szybko);
-}
-.crm-nota:hover .crm-usun { opacity: 1; }
-.crm-usun:focus-visible { opacity: 1; }
-.crm-usun:hover {
-  background: var(--crm-c-blad-tlo);
-  color: var(--crm-c-blad);
-}
-
-.crm-nota-usun {
-  margin-top: 10px;
-  padding: 9px 10px;
-  background: var(--crm-c-blad-tlo);
-  border: 1px solid var(--crm-c-blad-linia);
-  border-radius: var(--crm-r-s);
-  font-size: var(--crm-t-mini);
-  line-height: 1.5;
-  color: var(--crm-c-blad);
-  animation: crm-odslon 180ms cubic-bezier(.16, 1, .3, 1) both;
-}
-.crm-nota-usun .crm-akcje { margin-top: 8px; }
-
-@media (prefers-reduced-motion: reduce) {
-  .crm-nota-usun { animation: none; }
-}
-/* ---------- 21. PANEL WATKU ZGLOSZENIA ---------- */
+/* ---------- 24. PANEL WATKU ZGLOSZENIA ---------- */
 
 .crm-watek {
   background: var(--crm-brand-tlo);
-  border: 1px solid #D9E1F2;
+  border: 1px solid var(--crm-brand-linia);
   border-radius: var(--crm-r-m);
-  padding: 11px 12px;
+  padding: 12px;
   margin-bottom: 12px;
 }
 .crm-watek-brak {
@@ -1319,6 +1668,7 @@ content: "";
   margin-bottom: 6px;
 }
 .crm-watek-nr {
+  flex: none;
   font-family: var(--crm-font-naglowek);
   font-size: var(--crm-t-baza);
   font-weight: 600;
@@ -1329,6 +1679,7 @@ content: "";
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst-2);
   margin-left: auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1337,146 +1688,33 @@ content: "";
 .crm-watek-info {
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .crm-watek-cudze {
   font-size: var(--crm-t-mini);
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.45;
   color: var(--crm-c-uwaga);
   background: var(--crm-c-uwaga-tlo);
   border: 1px solid var(--crm-c-uwaga-lin);
   border-radius: var(--crm-r-s);
-  padding: 7px 9px;
+  padding: 7px 10px;
   margin-bottom: 8px;
 }
 
 .crm-watek .crm-label { margin-top: 8px; }
 .crm-watek .crm-input,
 .crm-watek .crm-textarea { margin-bottom: 0; }
-/* ---------- 22. PASEK KONTAKTOW (szukajka + "+ kontakt" w jednym rzedzie) ---------- */
-.crm-kontakt-pasek {
-  display: flex;
-  gap: 6px;
-  align-items: stretch;
-  margin-bottom: 10px;
-}
-.crm-kontakt-pasek .crm-szukaj {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin-bottom: 0;
-}
-.crm-kontakt-pasek .crm-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
 
-/* ---------- 23. DOLNY PASEK NAWIGACJI (ikony jak mainbar w Power Apps) ---------- */
-.crm-dol {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: var(--crm-tlo);
-  border-top: 1px solid var(--crm-linia);
-  box-shadow: 0 -2px 8px rgba(27, 26, 25, .06);
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-.crm-dol-btn {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
-  padding: 8px 2px 7px;
-  background: none;
-  border: 0;
-  color: var(--crm-tekst-3);
-  font-size: var(--crm-t-mikro);
-  font-weight: 600;
-  letter-spacing: .4px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color var(--crm-e-szybko), background var(--crm-e-szybko);
-}
-.crm-dol-btn svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.crm-dol-btn span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.crm-dol-btn svg { transition: transform var(--crm-e-szybko); }
-.crm-dol-btn:focus-visible { outline-offset: -3px; }
+/* ---------- 25. SZKOLENIA ---------- */
 
-/* belka u gory: pelna przy aktywnym widoku, zapowiedz przy najezdzie */
-.crm-dol-btn::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 25%;
-  right: 25%;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: var(--crm-brand);
-  transform: scaleX(0);
-  opacity: 0;
-  transition: transform var(--crm-e-szybko), opacity var(--crm-e-szybko);
-}
-
-@media (hover: hover) {
-  .crm-dol-btn:hover { color: var(--crm-brand); background: var(--crm-brand-tlo); }
-  .crm-dol-btn:hover svg { transform: translateY(-2px); }
-  .crm-dol-btn:hover::before { transform: scaleX(.5); opacity: .5; }
-}
-.crm-dol-btn:active svg { transform: scale(.92); }
-
-/* aktywny widok: kolor marki + belka u gory */
-.crm-dol-btn.crm-dol-akt { color: var(--crm-brand); }
-.crm-dol-btn.crm-dol-akt::before { transform: scaleX(1); opacity: 1; }
-
-@media (prefers-reduced-motion: reduce) {
-  .crm-dol-btn svg, .crm-dol-btn::before { transition: none; }
-  .crm-dol-btn:hover svg, .crm-dol-btn:active svg { transform: none; }
-}
-
-/* miejsce na pasek - tresc nie chowa sie pod nim */
-#app-body #item-subject { padding-bottom: 76px; }
-
-/* firma kontaktu w wyszukiwarce kontaktow */
-.crm-kontakt-firma {
-  display: inline-block;
-  background: none;
-  border: 0;
-  padding: 2px 0 0;
-  font-size: var(--crm-t-mini);
-  font-weight: 600;
-  color: var(--crm-brand);
-  cursor: pointer;
-}
-.crm-kontakt-firma:hover { color: var(--crm-brand-hover); text-decoration: underline; }
-
-/* ---------- 24. SZKOLENIA (karta szkolenia z lista uczestnikow) ---------- */
 .crm-szkolenie {
   background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
-  border-left: var(--crm-szyna) solid var(--crm-brand);
   border-radius: var(--crm-r-m);
-  padding: 9px 12px 10px;
+  padding: 10px 12px 11px;
   margin-bottom: 8px;
+  box-shadow: var(--crm-cien-karta);
 }
 .crm-szkolenie-top { display: flex; align-items: center; gap: 8px; }
 .crm-szkolenie-nazwa {
@@ -1487,6 +1725,7 @@ content: "";
   font-family: var(--crm-font-naglowek);
   font-size: var(--crm-t-maly);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
 }
 .crm-szkolenie-nazwa .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
@@ -1505,7 +1744,6 @@ content: "";
   border-radius: var(--crm-r-pill);
   color: var(--crm-c-ok);
   background: var(--crm-c-ok-tlo);
-  border: 1px solid var(--crm-c-ok-linia);
 }
 .crm-szkolenie-data {
   display: flex;
@@ -1520,8 +1758,8 @@ content: "";
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 9px;
+  padding-top: 9px;
   border-top: 1px solid var(--crm-linia);
 }
 .crm-szkolenie-osoba {
@@ -1531,149 +1769,16 @@ content: "";
   max-width: 100%;
   padding: 2px 8px 2px 6px;
   border-radius: var(--crm-r-pill);
-  background: var(--crm-tlo-3);
+  background: var(--crm-tlo-2);
   font-size: var(--crm-t-mikro);
   font-weight: 500;
   color: var(--crm-tekst-2);
 }
 .crm-szkolenie-osoba .crm-ikona { width: 11px; height: 11px; color: var(--crm-tekst-3); }
 
-/* ---------- 25. POLA Z IKONAMI (karta firmy, notatki, TECS, szanse, posiadane) ---------- */
-.crm-ik {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.crm-ik .crm-ikona { color: var(--crm-tekst-3); }
-.crm-ik .crm-ikona-txt {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* ---------- 26. KODY DEMO ---------- */
 
-.crm-pill { display: inline-flex; align-items: center; gap: 4px; }
-.crm-pill .crm-ikona { width: 11px; height: 11px; flex: none; }
-
-/* karta z danymi firmy */
-.crm-firma-karta {
-  background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
-  border-left: var(--crm-szyna) solid var(--crm-brand);
-  border-radius: var(--crm-r-m);
-  padding: 10px 12px 12px;
-  margin-top: 6px;
-  box-shadow: var(--crm-cien-1);
-}
-.crm-firma-karta .crm-firma-tytul {
-  margin-top: 0;
-  font-family: var(--crm-font-naglowek);
-  font-size: var(--crm-t-duzy);
-  color: var(--crm-tekst);
-}
-.crm-firma-karta .crm-firma-tytul .crm-ikona { width: 17px; height: 17px; color: var(--crm-brand); }
-.crm-firma-karta .crm-firma-tytul .crm-ikona-txt { white-space: normal; }
-.crm-firma-karta .crm-firma-pelna { margin: 2px 0 0 23px; color: var(--crm-tekst-2); }
-.crm-firma-adres {
-  margin-top: 6px;
-  font-size: var(--crm-t-mini);
-  color: var(--crm-tekst-2);
-}
-.crm-akcja {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 0;
-  background: var(--crm-tlo-3);
-  color: var(--crm-tekst-2);
-  font-weight: 500;
-  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
-}
-.crm-akcja:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
-.crm-akcja .crm-ikona { width: 13px; height: 13px; flex: none; }
-.crm-akcja span { overflow: hidden; text-overflow: ellipsis; }
-.crm-licznik { background: var(--crm-tlo-2); border: 1px solid var(--crm-linia); }
-.crm-licznik-lbl { gap: 4px; }
-.crm-licznik-lbl .crm-ikona { width: 11px; height: 11px; }
-
-/* kafle TECS / szanse / posiadane - szyna w kolorze etapu nadawana z JS */
-.crm-kafel {
-  background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
-  border-left: var(--crm-szyna) solid var(--crm-brand);
-  border-radius: var(--crm-r-m);
-  padding: 9px 12px 10px;
-  margin-bottom: 8px;
-}
-.crm-kafel .crm-kafel-rzad { margin-top: 0; }
-.crm-kafel .crm-kafel-rzad + .crm-kafel-rzad,
-.crm-kafel .crm-kafel-rzad + .crm-ik { margin-top: 6px; }
-.crm-kafel .crm-pill { flex: none; font-weight: 600; }
-.crm-kafel-nazwa {
-  font-family: var(--crm-font-naglowek);
-  font-size: var(--crm-t-maly);
-  color: var(--crm-tekst);
-}
-.crm-kafel-nazwa .crm-ikona { width: 15px; height: 15px; color: var(--crm-brand); }
-.crm-kafel-wartosc { font-size: var(--crm-t-baza); color: var(--crm-tekst); }
-.crm-kafel-wartosc .crm-ikona { color: var(--crm-c-ok); }
-.crm-kafel-meta { font-size: var(--crm-t-mini); margin-top: 6px; }
-.crm-kafel-meta .crm-ikona { color: currentColor; }
-.crm-kafel-opps { font-size: var(--crm-t-mini); color: var(--crm-tekst-3); margin-top: 4px; }
-.crm-kafel > .crm-pill { margin-top: 6px; }
-
-/* notatki */
-.crm-nota {
-  background: var(--crm-tlo);
-  border: 1px solid var(--crm-linia);
-  border-radius: var(--crm-r-m);
-  padding: 9px 12px 10px;
-  margin-bottom: 8px;
-}
-.crm-nota-top { align-items: center; gap: 8px; }
-.crm-nota-data { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
-.crm-nota-prawo { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
-.crm-nota-typ {
-  font-size: var(--crm-t-mikro);
-  font-weight: 600;
-  padding: 2px 9px;
-  border-radius: var(--crm-r-pill);
-  background: var(--crm-brand-tlo);
-  color: var(--crm-brand-hover);
-  white-space: nowrap;
-}
-.crm-usun .crm-ikona { width: 13px; height: 13px; display: block; }
-.crm-nota-osoba { margin-top: 6px; font-size: var(--crm-t-mini); color: var(--crm-tekst); }
-.crm-nota-osoba .crm-ikona { color: var(--crm-brand); }
-.crm-nota-fu { margin-top: 6px; }
-.crm-nota-tresc {
-  display: flex;
-  gap: 6px;
-  max-height: none;
-  overflow: visible;
-  margin-top: 8px;
-  padding: 7px 9px;
-  background: var(--crm-tlo-2);
-  border-radius: var(--crm-r-s);
-}
-.crm-nota-tresc .crm-ikona { flex: none; margin-top: 2px; color: var(--crm-tekst-3); }
-.crm-nota-tresc-txt {
-  min-width: 0;
-  white-space: pre-wrap;
-  max-height: 120px;
-  overflow-y: auto;
-}
-.crm-nota-autor { margin-top: 7px; font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
-.crm-nota-autor .crm-ikona { width: 12px; height: 12px; }
-
-/* ---------- 26. KODY DEMO (formularz kodow i licencji z cennika) ---------- */
 .crm-demo-pasek { margin: 0 0 8px; }
-.crm-demo-pasek .crm-btn,
-.crm-kafel .crm-akcje .crm-btn { display: inline-flex; align-items: center; gap: 5px; }
-.crm-demo-pasek .crm-ikona,
-.crm-kafel .crm-akcje .crm-ikona { width: 13px; height: 13px; }
 .crm-demo { margin-bottom: 10px; }
 .crm-demo-tytul {
   font-family: var(--crm-font-naglowek);
@@ -1682,7 +1787,7 @@ content: "";
   color: var(--crm-tekst);
   margin-bottom: 2px;
 }
-.crm-demo-tytul .crm-ikona { width: 16px; height: 16px; color: #7C3AED; }
+.crm-demo-tytul .crm-ikona { width: 16px; height: 16px; color: var(--crm-fiolet); }
 .crm-demo-okres {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1691,7 +1796,7 @@ content: "";
 .crm-demo-wyniki {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   margin: 4px 0 6px;
 }
 .crm-demo-wynik {
@@ -1699,13 +1804,14 @@ content: "";
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
-  padding: 6px 9px;
-  font-family: inherit;
+  padding: 6px 10px;
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst);
   cursor: pointer;
+  transition: background var(--crm-e-szybko), border-color var(--crm-e-szybko),
+              color var(--crm-e-szybko);
 }
-.crm-demo-wynik:hover { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-demo-wynik:hover { background: var(--crm-brand-tlo); border-color: var(--crm-brand-linia); color: var(--crm-brand); }
 .crm-demo-wybrane:empty { display: none; }
 .crm-demo-x {
   background: none;
@@ -1721,9 +1827,9 @@ content: "";
 /* lista licencji z liczba sztuk */
 .crm-demo-dodaj {
   margin: 4px 0 8px;
-  padding: 8px 10px;
+  padding: 9px 10px;
   background: var(--crm-brand-tlo);
-  border: 1px solid var(--crm-brand);
+  border: 1px solid var(--crm-brand-linia);
   border-radius: var(--crm-r-s);
 }
 .crm-demo-dodaj-nazwa { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
@@ -1736,9 +1842,8 @@ content: "";
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  padding: 6px 9px;
   background: var(--crm-tlo-2);
-  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst);
@@ -1751,25 +1856,19 @@ content: "";
   color: var(--crm-brand);
   background: var(--crm-brand-tlo);
   border-radius: var(--crm-r-pill);
-  padding: 1px 7px;
+  padding: 1px 8px;
 }
-
 
 /* ---------- 27. NOWA FIRMA (formularz z danymi z rejestru VAT) ---------- */
-.crm-nf-otworz {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
+
 .crm-nf-otworz .crm-ikona { width: 14px; height: 14px; }
 .crm-nf-sekcja {
   margin: 14px 0 2px;
   padding-top: 10px;
-  border-top: 1px solid #D9E1F2;
-  font-size: 10px;
+  border-top: 1px solid var(--crm-linia);
+  font-size: var(--crm-t-mikro);
   font-weight: 600;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
   text-transform: uppercase;
   color: var(--crm-tekst-3);
 }
@@ -1791,54 +1890,68 @@ content: "";
 .crm-nf .crm-chipy { margin-bottom: 10px; }
 
 /* ---------- 28. MOJE ZGLOSZENIA (sekcje wedlug statusu) ---------- */
-.crm-kat {
-  margin-bottom: 8px;
-  border: 1px solid var(--crm-linia);
-  border-radius: var(--crm-r-m);
-  background: var(--crm-tlo);
-}
+
+/* naglowek sekcji jak w grupowanej liscie - karty zostaja kartami */
+.crm-kat { margin-bottom: 4px; }
 .crm-kat-naglowek {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  min-height: 34px;
+  padding: 6px 8px;
   cursor: pointer;
   list-style: none;
   font-size: var(--crm-t-maly);
   font-weight: 600;
   color: var(--crm-tekst);
-  border-radius: var(--crm-r-m);
+  border-radius: var(--crm-r-s);
+  transition: background var(--crm-e-szybko);
 }
 .crm-kat-naglowek::-webkit-details-marker { display: none; }
 .crm-kat-naglowek::after {
   content: "";
+  flex: none;
   width: 6px;
   height: 6px;
-  margin-left: 2px;
-  border-right: 2px solid var(--crm-tekst-3);
-  border-bottom: 2px solid var(--crm-tekst-3);
+  margin: 0 3px 0 2px;
+  border-right: 1.8px solid var(--crm-tekst-3);
+  border-bottom: 1.8px solid var(--crm-tekst-3);
   transform: rotate(-45deg);
   transition: transform var(--crm-anim);
 }
 .crm-kat[open] > .crm-kat-naglowek::after { transform: rotate(45deg); }
-.crm-kat-naglowek:hover { background: var(--crm-brand-tlo); color: var(--crm-brand); }
+.crm-kat-naglowek:hover { background: var(--crm-wypelnienie); }
 .crm-kat-kropka { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .crm-kat-nazwa { flex: 1; min-width: 0; }
 .crm-kat-ile {
-  font-size: var(--crm-t-mini);
-  font-weight: 700;
+  font-size: var(--crm-t-mikro);
+  font-weight: 600;
   color: var(--crm-tekst-2);
-  background: var(--crm-tlo-3);
+  background: var(--crm-wypelnienie);
   border-radius: var(--crm-r-pill);
   padding: 1px 8px;
 }
-.crm-kat-lista { padding: 2px 8px 8px; }
-.crm-kat-lista .crm-pusto { margin: 4px 2px; }
-.crm-kat-wiecej { width: 100%; margin-top: 4px; }
+.crm-kat-lista { padding: 4px 0 6px; }
+.crm-kat-lista .crm-pusto { margin: 0; padding: 12px; }
+.crm-kat-wiecej { width: 100%; margin-top: 2px; }
 
-/* ---------- 29. SZANSE FIRMY NADAWCY (notatki do szans) ---------- */
-.crm-dol.crm-dol-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.crm-dol-btn[hidden] { display: none; }
+/* usuwanie wlasnego zgloszenia */
+.crm-zgl-usun { color: var(--crm-czerwony); }
+.crm-zgl-usun:hover:not(:disabled) { background: var(--crm-czerwony-tlo); color: var(--crm-czerwony); }
+.crm-zgl-usun .crm-ikona { width: 13px; height: 13px; }
+
+/* filtry zakladki Supporty */
+.crm-sup-filtry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 8px;
+  margin-bottom: 8px;
+}
+.crm-sup-filtry .crm-select { width: 100%; margin-bottom: 6px; }
+.crm-sup-wyczysc { grid-column: 1 / -1; justify-self: start; }
+.crm-sup-wiecej { display: flex; width: 100%; margin-top: 4px; }
+
+/* ---------- 29. SZANSE FIRMY NADAWCY ---------- */
 
 .crm-szanse-firma {
   display: flex;
@@ -1846,154 +1959,163 @@ content: "";
   gap: 8px;
   width: 100%;
   margin-bottom: 10px;
-  padding: 9px 12px;
-  background: var(--crm-brand-tlo);
-  border: 1px solid #D9E1F2;
+  padding: 10px 12px;
+  background: var(--crm-tlo);
+  border: 0;
   border-radius: var(--crm-r-m);
+  box-shadow: var(--crm-cien-karta);
   font-family: var(--crm-font-naglowek);
   font-size: var(--crm-t-baza);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--crm-anim), color var(--crm-anim);
+  transition: box-shadow var(--crm-anim), color var(--crm-anim);
 }
 .crm-szanse-firma .crm-ikona { width: 16px; height: 16px; flex: none; color: var(--crm-brand); }
-.crm-szanse-firma:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-szanse-firma:hover { box-shadow: var(--crm-cien-2); color: var(--crm-brand); }
 
 .crm-szansa-akcje { flex-wrap: wrap; }
-.crm-szansa-akcje .crm-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; }
+.crm-szansa-akcje .crm-btn { padding: 4px 10px; }
 .crm-szansa-akcje .crm-ikona { width: 13px; height: 13px; }
-.crm-btn-cichy.crm-btn-wcisniety { color: var(--crm-brand); border-color: var(--crm-brand); background: var(--crm-brand-tlo); }
-.crm-szansa-noty { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-.crm-szansa-noty .crm-nota { margin: 0; }
-.crm-kafel .crm-nowe { margin: 8px 0 0; }
 
-/* ---------- 30. RODZAJE NOTATEK - ikony zamiast emoji ---------- */
-.crm-chip-rodzaj {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
+/* "Nowy Opps Soft" / "Nowy Opps TECS" nad lista w widoku maila */
+.crm-nowa-szansa { display: flex; width: 100%; justify-content: center; }
+
+/* przyciski kart szansy / TECS - rowna siatka 3 x 2 */
+.crm-karta-akcje {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: stretch;
+}
+.crm-karta-akcje > .crm-btn {
+  position: relative;
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
+  min-height: 46px;
+  padding: 7px 4px 6px;
+  font-size: var(--crm-t-mikro);
+  line-height: 1.2;
 }
-.crm-chip-rodzaj .crm-ikona { width: 13px; height: 13px; flex: none; }
-.crm-chip-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.crm-nota-typ { display: inline-flex; align-items: center; gap: 4px; }
-.crm-nota-typ .crm-ikona { width: 11px; height: 11px; flex: none; }
+.crm-karta-akcje > .crm-btn .crm-ikona { width: 16px; height: 16px; color: var(--crm-brand); }
+.crm-karta-akcje > .crm-btn > span:not(.crm-blysk) { min-width: 0; overflow-wrap: anywhere; }
+.crm-karta-akcje > .crm-komunikat { grid-column: 1 / -1; }
 
-/* zapis otwartego maila do notatki (rodzaj "mail") */
-.crm-mail-opcja {
-  margin: 8px 0 4px;
-  padding: 2px 10px 8px;
-  background: var(--crm-tlo);
-  border: 1px dashed var(--crm-linia-mocna);
-  border-radius: var(--crm-r-s);
-}
-.crm-mail-opcja-info { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); margin-top: 2px; }
-.crm-mail-opcja-info .crm-ikona { color: var(--crm-brand); }
-.crm-mail-opcja-info .crm-ikona-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ---------- 30. ZARZADZANIE SZANSA (status i etapy) ---------- */
 
-/* edycja wlasnej notatki - olowek obok kosza */
-.crm-edytuj .crm-ikona { width: 13px; height: 13px; display: block; }
-.crm-usun.crm-edytuj:hover { color: var(--crm-brand); background: var(--crm-brand-tlo); }
-
-/* ---------- 31. ZARZADZANIE SZANSA (status i etapy) ---------- */
 .crm-szansa-panel {
   margin-top: 8px;
   padding: 0 10px 10px;
   background: var(--crm-tlo-2);
-  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
 }
+.crm-szansa-panel .crm-nf-sekcja { border-top-color: var(--crm-linia); }
 .crm-szansa-panel .crm-nf-sekcja:first-child { border-top: 0; margin-top: 4px; }
+
+/* kolory --kol / --tlo nadawane z JS */
 .crm-szansa-statusy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
 .crm-szansa-status {
-  padding: 6px 4px;
+  min-height: var(--crm-h-przycisk);
+  padding: 5px 4px;
   border: 1px solid var(--kol);
   border-radius: var(--crm-r-s);
   background: var(--crm-tlo);
   color: var(--kol);
-  font-family: inherit;
   font-size: var(--crm-t-mini);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background var(--crm-e-szybko);
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
 }
 .crm-szansa-status:hover { background: var(--tlo); }
 .crm-szansa-status.crm-szansa-status-akt { background: var(--kol); color: #fff; }
 .crm-szansa-forma { margin: 8px 0 0; background: var(--crm-tlo); }
+
 .crm-szansa-etapy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; margin-top: 6px; }
 .crm-szansa-krok {
-  padding: 5px 8px;
-  border: 1px solid #E5E7EB;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
   background: var(--crm-tlo);
-  color: #374151;
-  font-family: inherit;
+  color: var(--crm-tekst);
   font-size: var(--crm-t-mini);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background var(--crm-e-szybko), border-color var(--crm-e-szybko),
+              color var(--crm-e-szybko);
 }
-.crm-szansa-krok:hover { border-color: #5B6CDB; color: #5B6CDB; }
-.crm-szansa-krok.crm-krok-ok { background: #E6F6EE; border-color: #A7DCC0; color: #16A34A; }
-.crm-szansa-krok.crm-krok-biez { background: #5B6CDB; border-color: #5B6CDB; color: #fff; font-weight: 600; cursor: default; }
+.crm-szansa-krok:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-szansa-krok.crm-krok-ok { background: var(--crm-zielony-tlo); border-color: var(--crm-zielony-linia); color: var(--crm-c-ok); }
+.crm-szansa-krok.crm-krok-biez { background: var(--crm-brand); border-color: var(--crm-brand); color: #fff; font-weight: 600; cursor: default; }
+.crm-szansa-krok.crm-krok-rezygnacja { grid-column: 1 / -1; color: var(--crm-czerwony); border-color: var(--crm-czerwony-lin); }
+.crm-szansa-krok.crm-krok-rezygnacja:hover { border-color: var(--crm-czerwony); background: var(--crm-czerwony-tlo); color: var(--crm-czerwony); }
+.crm-szansa-krok.crm-krok-rez-akt { background: var(--crm-czerwony); border-color: var(--crm-czerwony); color: #fff; font-weight: 600; cursor: default; }
 .crm-szansa-panel > .crm-komunikat { display: block; margin-top: 6px; }
 .crm-szansa-panel > .crm-komunikat:empty { display: none; }
 
 /* pasek postepu etapu na karcie szansy - 8 odcinkow */
-.crm-szansa-postep { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin: 5px 0 6px; }
-.crm-szansa-odc { height: 5px; border-radius: 3px; background: var(--crm-tlo-3); }
+.crm-szansa-postep { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; margin: 6px 0; }
+.crm-szansa-odc { height: 4px; border-radius: 2px; background: var(--crm-wypelnienie); }
 
 /* dane etapu - zakladki 1-8 i pola */
 .crm-szansa-zakladki { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 6px 0 4px; }
 .crm-szansa-zakl {
   position: relative;
-  padding: 4px 8px;
+  min-height: 26px;
+  padding: 3px 9px;
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
   background: var(--crm-tlo);
   color: var(--crm-tekst-2);
-  font-family: inherit;
   font-size: var(--crm-t-mini);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background var(--crm-e-szybko), border-color var(--crm-e-szybko),
+              color var(--crm-e-szybko);
 }
 .crm-szansa-zakl:hover { border-color: var(--crm-brand); color: var(--crm-brand); }
 .crm-szansa-zakl.crm-zakl-akt { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); font-weight: 600; }
-.crm-szansa-zakl.crm-zakl-zmiany { box-shadow: inset 3px 0 0 #D97706; }
+.crm-szansa-zakl.crm-zakl-zmiany { box-shadow: inset 3px 0 0 var(--crm-pomarancz); }
 .crm-szansa-pola { margin-top: 4px; }
-.crm-szansa-link { display: block; font-size: var(--crm-t-mini); word-break: break-all; margin-bottom: 10px; }
+.crm-szansa-link { display: block; font-size: var(--crm-t-mini); color: var(--crm-brand); word-break: break-all; margin-bottom: 10px; }
 
-/* ---------- 32. PRODUKTY TECS ---------- */
+/* edycja szansy w panelu "Status i etap" */
+.crm-szansa-edytuj { margin: 6px 0 2px; }
+.crm-szansa-edytuj .crm-ikona { width: 13px; height: 13px; }
+
+/* ---------- 31. PRODUKTY TECS / SZANSY ---------- */
+
 .crm-tecs-produkty {
   margin-top: 8px;
   padding: 8px 10px 10px;
   background: var(--crm-tlo-2);
-  border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
 }
 .crm-tecs-lista { display: flex; flex-direction: column; gap: 5px; }
 .crm-tecs-poz {
-  padding: 6px 9px;
+  padding: 7px 10px;
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
+  transition: border-color var(--crm-e-szybko);
 }
-.crm-tecs-poz:hover { border-color: #A5B0F0; }
+.crm-tecs-poz:hover { border-color: var(--crm-brand-linia); }
 .crm-tecs-poz-gora { display: flex; align-items: center; gap: 8px; }
 .crm-tecs-poz-nazwa { flex: 1; min-width: 0; font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); }
 .crm-tecs-poz-nazwa .crm-ikona-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crm-tecs-poz-nazwa .crm-ikona { color: #0D9488; }
+.crm-tecs-poz-nazwa .crm-ikona { color: var(--crm-morski); }
 .crm-tecs-poz-suma { flex: none; font-size: var(--crm-t-mini); font-weight: 700; color: var(--crm-tekst); }
 .crm-tecs-poz-linia {
   display: flex;
@@ -2003,14 +2125,16 @@ content: "";
   font-size: var(--crm-t-mikro);
   color: var(--crm-tekst-2);
 }
+.crm-tecs-poz-ceny { color: var(--crm-tekst-3); }
 .crm-tecs-cena { font-weight: 600; color: var(--crm-tekst); }
-.crm-tecs-cena-nizsza { color: #DC2626; }
-.crm-tecs-cena-ok { color: #16A34A; }
+.crm-tecs-cena-nizsza { color: var(--crm-czerwony); }
+.crm-tecs-cena-ok { color: var(--crm-c-ok); }
 .crm-tecs-poz-akcje { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .crm-tecs-poz-akcje .crm-usun { opacity: 1; font-size: var(--crm-t-mikro); }
 .crm-tecs-poz-akcje .crm-usun:disabled { opacity: .4; cursor: default; }
-.crm-tecs-poz-akcje .crm-btn { padding: 4px 10px; }
+.crm-tecs-poz-akcje .crm-btn { padding: 3px 10px; min-height: 26px; }
 .crm-tecs-pytanie { flex: 1; font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-c-blad); }
+.crm-tecs-legenda { flex: 1 1 100%; margin: 0; color: var(--crm-c-uwaga); }
 .crm-tecs-stopka {
   display: flex;
   flex-wrap: wrap;
@@ -2022,22 +2146,22 @@ content: "";
 }
 .crm-tecs-stopka-et { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
 .crm-tecs-stopka-war { font-size: var(--crm-t-maly); font-weight: 700; color: var(--crm-tekst); }
-.crm-tecs-stopka .crm-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; }
+.crm-tecs-stopka .crm-btn { margin-left: auto; padding: 4px 10px; }
 .crm-tecs-stopka .crm-ikona { width: 13px; height: 13px; }
-.crm-tecs-stary .crm-btn { flex: none; padding: 3px 10px; }
+.crm-tecs-stary .crm-btn { flex: none; padding: 3px 10px; min-height: 26px; }
 
 /* przycisk "Nowa szansa TECS" nad lista TECS */
-.crm-tecs-nowy { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; }
+.crm-tecs-nowy { margin: 0 0 10px; }
 .crm-tecs-nowy .crm-ikona { width: 14px; height: 14px; }
 
-/* formularz produktu TECS - podglad wyliczen */
+/* formularz produktu - podglad wyliczen */
 .crm-tecs-forma { margin: 6px 0; }
 .crm-tecs-podglad {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 14px;
   margin: 2px 0 8px;
-  padding: 6px 9px;
+  padding: 7px 10px;
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
@@ -2048,20 +2172,45 @@ content: "";
 .crm-tecs-dodaj { margin-top: 8px; }
 .crm-tecs-dodaj .crm-tecs-nowy { margin: 0; }
 
+/* podglad w formularzu produktu szansy - rozliczenie jak paragon */
+.crm-sz-podglad { display: block; padding: 9px 11px; background: var(--crm-tlo-2); border-color: transparent; border-radius: var(--crm-r-m); }
+.crm-sz-podglad > div:first-child { font-weight: 400; }
+.crm-tecs-podglad-rzad { display: flex; justify-content: space-between; gap: 10px; line-height: 1.75; }
+.crm-tecs-podglad-rzad > span:last-child { font-weight: 600; color: var(--crm-tekst); white-space: nowrap; }
+.crm-tecs-podglad-rzad.crm-nf-uwaga > span { color: var(--crm-c-uwaga); }
+.crm-tecs-podglad-suma {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--crm-linia);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-size: var(--crm-t-mikro);
+  align-items: baseline;
+}
+.crm-tecs-podglad-suma > span:last-child {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-duzy);
+  letter-spacing: -.02em;
+  color: var(--crm-brand);
+  text-transform: none;
+}
+
 /* produkty z wygranej szansy w formularzu nowego TECS */
 .crm-tecs-prop { margin: 4px 0; flex-wrap: wrap; }
 .crm-tecs-prop-nazwa { font-weight: 600; color: var(--crm-tekst); }
 .crm-tecs-prop-cena { margin-left: auto; font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
 
-/* ---------- 33. SZCZEGOLY TECS (kafle, etap, uwagi) ---------- */
+/* ---------- 32. SZCZEGOLY TECS (kafle, etap, uwagi) ---------- */
+
 .crm-tecs-szcz-opis { margin: 6px 0 2px; font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
-.crm-tecs-link { text-decoration: none; padding: 4px 10px; }
+.crm-tecs-link { text-decoration: none; padding: 3px 10px; }
 .crm-tecs-kafle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
 .crm-tecs-kafel {
   display: flex;
   gap: 7px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 7px 9px;
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
@@ -2078,15 +2227,13 @@ content: "";
   white-space: nowrap;
 }
 .crm-tecs-kafel-dop { font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); }
-.crm-szansa-krok.crm-krok-rezygnacja { grid-column: 1 / -1; color: #DC2626; border-color: #F8B4B4; }
-.crm-szansa-krok.crm-krok-rezygnacja:hover { border-color: #DC2626; background: #FEE2E2; color: #DC2626; }
-.crm-szansa-krok.crm-krok-rez-akt { background: #DC2626; border-color: #DC2626; color: #fff; font-weight: 600; cursor: default; }
 .crm-tecs-uwagi {
   margin-top: 6px;
   max-height: 160px;
   overflow: auto;
   white-space: pre-wrap;
   font-size: var(--crm-t-mini);
+  line-height: 1.45;
   color: var(--crm-tekst);
 }
 .crm-tecs-uwagi-brak { color: var(--crm-tekst-3); }
@@ -2094,7 +2241,7 @@ content: "";
 /* renewal TECS - podsumowanie poprzedniego */
 .crm-tecs-poprzedni {
   margin: 0 0 6px;
-  padding: 7px 9px;
+  padding: 7px 10px;
   background: var(--crm-tlo);
   border: 1px solid var(--crm-linia);
   border-radius: var(--crm-r-s);
@@ -2102,9 +2249,8 @@ content: "";
   color: var(--crm-tekst);
 }
 
-/* ---------- 34. karta kontaktu (galeria Contacts z Power Apps) ---------- */
+/* ---------- 33. KARTA KONTAKTU "kk" ---------- */
 
-.crm-kk::before { display: none; }
 .crm-kk { padding: 12px 12px 10px; }
 .crm-kk-top { display: flex; align-items: flex-start; gap: 10px; }
 .crm-kk-avatar {
@@ -2114,15 +2260,18 @@ content: "";
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: #EEF0FC;
-  color: #5B6CDB;
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand);
   font-size: var(--crm-t-mini);
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: .02em;
 }
 .crm-kk-kto { flex: 1; min-width: 0; }
 .crm-kk-nazwa {
+  font-family: var(--crm-font-naglowek);
   font-size: var(--crm-t-baza);
   font-weight: 600;
+  letter-spacing: -.01em;
   color: var(--crm-tekst);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2136,8 +2285,8 @@ content: "";
   white-space: nowrap;
 }
 .crm-kk-brak { color: var(--crm-tekst-3); font-style: italic; }
-.crm-kk-byly .crm-kk-avatar { background: #F3F4F6; color: #9CA3AF; }
-.crm-kk-byly .crm-kk-nazwa { color: #9CA3AF; text-decoration: line-through; }
+.crm-kk-byly .crm-kk-avatar { background: var(--crm-tlo-3); color: var(--crm-tekst-3); }
+.crm-kk-byly .crm-kk-nazwa { color: var(--crm-tekst-3); text-decoration: line-through; }
 .crm-kk .crm-kontakt-firma { margin: 4px 0 0 46px; }
 
 .crm-kk-pigulki { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 46px; }
@@ -2149,7 +2298,7 @@ content: "";
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 26px;
+  min-height: 28px;
   font-size: var(--crm-t-mini);
   color: var(--crm-tekst);
 }
@@ -2159,43 +2308,52 @@ content: "";
   height: 26px;
   display: grid;
   place-items: center;
-  border-radius: var(--crm-r-s);
+  border-radius: var(--crm-r-xs);
   color: var(--crm-tekst-3);
+  transition: background var(--crm-e-szybko);
 }
-.crm-kk-dzwon { color: #16A34A; background: #E6F6EE; }
+.crm-kk-dzwon { color: var(--crm-zielony); background: var(--crm-zielony-tlo); }
 .crm-kk-dzwon:hover { background: #CDEFD9; }
 .crm-kk-wartosc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .crm-kk-akcja {
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--crm-r-s);
   background: transparent;
   color: var(--crm-tekst-2);
   cursor: pointer;
+  transition: background var(--crm-e-szybko), transform var(--crm-e-szybko);
 }
 .crm-kk-akcja .crm-ikona { width: 16px; height: 16px; }
-.crm-kk-akcja:hover:not(:disabled) { background: #EEF0FC; }
+.crm-kk-akcja:hover:not(:disabled) { background: var(--crm-wypelnienie); }
+.crm-kk-akcja:active:not(:disabled) { transform: scale(.92); }
 .crm-kk-akcja:disabled { opacity: .35; cursor: default; }
 .crm-kk-kopiuj { width: 26px; height: 26px; color: var(--crm-tekst-3); }
 .crm-kk-kopiuj .crm-ikona { width: 14px; height: 14px; }
 
-.crm-kk-akcje { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.crm-kk-akcje { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.crm-kk-akcje .crm-kk-akcja { width: 32px; height: 32px; border-radius: 50%; }
+.crm-kk-akcje .crm-kk-akcja:hover:not(:disabled) { filter: brightness(.95); }
+.crm-kk-akcje .crm-kk-niebieski    { background: var(--crm-brand-tlo); }
+.crm-kk-akcje .crm-kk-pomaranczowy { background: var(--crm-pomarancz-tlo); }
+.crm-kk-akcje .crm-kk-zolty        { background: var(--crm-zolty-tlo); }
+.crm-kk-akcje .crm-kk-czerwony     { background: var(--crm-czerwony-tlo); }
 .crm-kk-prawo { margin-left: auto; }
-.crm-kk-akcje .crm-kk-niebieski { color: #5B6CDB; }
-.crm-kk-akcje .crm-kk-pomaranczowy { color: #D97706; }
-.crm-kk-akcje .crm-kk-pomaranczowy:hover:not(:disabled) { background: #FEF3E2; }
-.crm-kk-akcje .crm-kk-zolty { color: #CA8A04; }
-.crm-kk-akcje .crm-kk-zolty:hover:not(:disabled) { background: #FEF9C3; }
-.crm-kk-akcje .crm-kk-czerwony { color: #DC2626; }
-.crm-kk-akcje .crm-kk-czerwony:hover:not(:disabled) { background: #FEE2E2; }
+.crm-kk-akcje .crm-kk-niebieski { color: var(--crm-brand); }
+.crm-kk-akcje .crm-kk-niebieski:hover:not(:disabled) { background: var(--crm-brand-tlo); }
+.crm-kk-akcje .crm-kk-pomaranczowy { color: var(--crm-pomarancz); }
+.crm-kk-akcje .crm-kk-pomaranczowy:hover:not(:disabled) { background: var(--crm-pomarancz-tlo); }
+.crm-kk-akcje .crm-kk-zolty { color: var(--crm-zolty); }
+.crm-kk-akcje .crm-kk-zolty:hover:not(:disabled) { background: var(--crm-zolty-tlo); }
+.crm-kk-akcje .crm-kk-czerwony { color: var(--crm-czerwony); }
+.crm-kk-akcje .crm-kk-czerwony:hover:not(:disabled) { background: var(--crm-czerwony-tlo); }
 .crm-kk-akcje .crm-kk-akcja:disabled { opacity: .6; }
-.crm-kk-akcja[hidden] { display: none; }
 
 .crm-kk-potwierdz {
   display: flex;
@@ -2208,7 +2366,7 @@ content: "";
 .crm-kk-potwierdz > span { flex: 1 1 100%; }
 .crm-kk > .crm-komunikat:empty { display: none; }
 
-/* ---------- 35. zalaczniki szansy / TECS-u (SharePoint) ---------- */
+/* ---------- 34. ZALACZNIKI SZANSY / TECS-u (SharePoint) ---------- */
 
 .crm-zal { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--crm-linia); }
 .crm-zal-lista { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
@@ -2217,10 +2375,11 @@ content: "";
   align-items: center;
   gap: 6px;
   padding: 5px 6px;
-  border-radius: var(--crm-r-s);
+  border-radius: var(--crm-r-xs);
   font-size: var(--crm-t-mini);
   color: var(--crm-brand);
   text-decoration: none;
+  transition: background var(--crm-e-szybko);
 }
 .crm-zal-plik:hover { background: var(--crm-brand-tlo); }
 .crm-zal-plik > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2229,7 +2388,7 @@ content: "";
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px 10px;
+  padding: 16px 10px;
   border: 1.5px dashed var(--crm-linia-mocna);
   border-radius: var(--crm-r-m);
   background: var(--crm-tlo-2);
@@ -2237,7 +2396,8 @@ content: "";
   font-size: var(--crm-t-mini);
   text-align: center;
   cursor: pointer;
-  transition: border-color var(--crm-e-szybko), background var(--crm-e-szybko);
+  transition: border-color var(--crm-e-szybko), background var(--crm-e-szybko),
+              color var(--crm-e-szybko);
 }
 .crm-zal-strefa:hover,
 .crm-zal-strefa.crm-zal-nad { border-color: var(--crm-brand); background: var(--crm-brand-tlo); color: var(--crm-brand); }
@@ -2255,27 +2415,29 @@ content: "";
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: var(--crm-r-s);
+  border-radius: var(--crm-r-xs);
   background: transparent;
   color: var(--crm-tekst-3);
   cursor: pointer;
+  transition: background var(--crm-e-szybko), color var(--crm-e-szybko);
 }
-.crm-zal-kosz:hover:not(:disabled) { background: #FEE2E2; color: #DC2626; }
+.crm-zal-kosz:hover:not(:disabled) { background: var(--crm-czerwony-tlo); color: var(--crm-czerwony); }
 .crm-zal-kosz:disabled { opacity: .4; cursor: default; }
+.crm-zal-dok:hover:not(:disabled) { background: var(--crm-pomarancz-tlo); color: var(--crm-pomarancz); }
 .crm-zal-potwierdz {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
   margin: 2px 0 6px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   border-radius: var(--crm-r-s);
   background: var(--crm-c-blad-tlo);
   font-size: var(--crm-t-mini);
 }
 .crm-zal-potwierdz > span { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 
-/* ---------- 36. nowa szansa sprzedazy (conOppsForm) ---------- */
+/* ---------- 35. NOWA SZANSA SPRZEDAZY ---------- */
 
 .crm-ns-naglowek { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .crm-ns-ik {
@@ -2284,18 +2446,24 @@ content: "";
   height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  background: #E6F6EE;
-  color: #16A34A;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-zielony-tlo);
+  color: var(--crm-zielony);
 }
 .crm-ns-ik .crm-ikona { width: 18px; height: 18px; }
-.crm-ns-tytul { font-size: var(--crm-t-baza); font-weight: 600; color: var(--crm-tekst); }
+.crm-ns-tytul {
+  font-family: var(--crm-font-naglowek);
+  font-size: var(--crm-t-baza);
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--crm-tekst);
+}
 .crm-ns .crm-nowe-info { margin: 0; }
 .crm-ns-osoby {
   margin: 6px 0 4px;
   padding: 8px;
   border-radius: var(--crm-r-m);
-  background: #F8F9FB;
+  background: var(--crm-tlo-2);
 }
 .crm-ns-osoby .crm-szukaj { margin-bottom: 6px; }
 .crm-ns-lista { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
@@ -2304,35 +2472,38 @@ content: "";
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 5px 8px;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  background: #fff;
-  font-family: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo);
   text-align: left;
   cursor: pointer;
-  color: #9CA3AF;
+  color: var(--crm-tekst-3);
+  transition: background var(--crm-e-szybko), border-color var(--crm-e-szybko);
 }
-.crm-ns-osoba:hover { background: #F3F4F6; }
+.crm-ns-osoba:hover { border-color: var(--crm-linia-mocna); }
 .crm-ns-osoba > span { display: flex; flex-direction: column; min-width: 0; }
-.crm-ns-osoba-nazwa { font-size: var(--crm-t-mini); font-weight: 600; color: #1F2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crm-ns-osoba-stan { font-size: var(--crm-t-mikro); color: #6B7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crm-ns-osoba-akt { background: #EEF0FC; border-color: #A5B0F0; color: #5B6CDB; }
-.crm-ns-osoba-akt .crm-ns-osoba-nazwa { color: #5B6CDB; }
-.crm-ns .crm-podpowiedz { display: block; color: #D97706; }
-.crm-ns .crm-podpowiedz.crm-ns-gotowe { color: #16A34A; }
+.crm-ns-osoba-nazwa { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-tekst); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-ns-osoba-stan { font-size: var(--crm-t-mikro); color: var(--crm-tekst-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-ns-osoba-akt { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); }
+.crm-ns-osoba-akt .crm-ns-osoba-nazwa { color: var(--crm-brand); }
+.crm-ns .crm-podpowiedz { display: block; }
+.crm-ns .crm-podpowiedz.crm-ns-gotowe {
+  color: var(--crm-c-ok);
+  background: var(--crm-c-ok-tlo);
+  border-color: var(--crm-c-ok-linia);
+}
 
-/* ---------- 37. dokumenty firmy (folder SharePoint w dodatku) ---------- */
+/* ---------- 36. DOKUMENTY FIRMY (folder SharePoint) ---------- */
 
 .crm-dok-gora { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.crm-dok-gora .crm-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.crm-dok-gora .crm-btn { flex: none; }
 .crm-dok-okruszki { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; }
 .crm-dok-okr {
   border: 0;
   background: transparent;
-  padding: 2px 4px;
-  border-radius: var(--crm-r-s);
-  font-family: inherit;
+  padding: 2px 5px;
+  border-radius: var(--crm-r-xs);
   font-size: var(--crm-t-mini);
   color: var(--crm-brand);
   cursor: pointer;
@@ -2348,217 +2519,119 @@ content: "";
 
 .crm-dok-nowy { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
 .crm-dok-nowy .crm-input { flex: 1; min-width: 0; margin: 0; }
-.crm-dok-nowy .crm-btn { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.crm-dok-nowy .crm-btn { flex: none; }
 
-.crm-dok-lista { display: flex; flex-direction: column; gap: 2px; }
+/* lista plikow jako jedna grupa z wierszami */
+.crm-dok-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--crm-tlo);
+  border-radius: var(--crm-r-m);
+  box-shadow: var(--crm-cien-karta);
+}
+.crm-dok-lista:empty { display: none; }
 .crm-dok-pozycja { display: flex; align-items: center; gap: 2px; }
 .crm-dok-wiersz {
   flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
+  gap: 9px;
+  padding: 7px 8px;
   border: 0;
   border-radius: var(--crm-r-s);
   background: transparent;
-  font-family: inherit;
   text-align: left;
   color: var(--crm-brand);
   text-decoration: none;
   cursor: pointer;
+  transition: background var(--crm-e-szybko);
 }
-.crm-dok-wiersz:hover { background: var(--crm-brand-tlo); }
-.crm-dok-wiersz .crm-ikona { width: 16px; height: 16px; }
+.crm-dok-wiersz:hover { background: var(--crm-wypelnienie); }
+.crm-dok-wiersz .crm-ikona { width: 17px; height: 17px; }
 .crm-dok-folder .crm-ikona,
-.crm-dok-wyzej .crm-ikona { color: #D97706; }
+.crm-dok-wyzej .crm-ikona { color: var(--crm-pomarancz); }
 .crm-dok-opis { display: flex; flex-direction: column; min-width: 0; }
 .crm-dok-nazwa { font-size: var(--crm-t-mini); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crm-dok-folder .crm-dok-nazwa, .crm-dok-wyzej .crm-dok-nazwa { color: var(--crm-tekst); }
 .crm-dok-meta { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------- 38. karta firmy jak hdCard w Power Apps ---------- */
-
-.crm-firma-karta.crm-hd { border: 0; border-radius: 14px; padding: 12px; }
-.crm-hd-gora { display: flex; align-items: flex-start; gap: 12px; }
-.crm-hd-bud {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: #EEF0FC;
-  color: #5B6CDB;
-}
-.crm-hd-bud .crm-ikona { width: 24px; height: 24px; }
-.crm-hd-kto { flex: 1; min-width: 0; }
-.crm-hd-nazwa {
-  font-family: var(--crm-font-naglowek);
-  font-size: var(--crm-t-duzy);
-  font-weight: 600;
-  color: #1F2937;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-.crm-hd-opiekun { margin-top: 5px; padding: 3px 10px; border-radius: 12px; font-size: var(--crm-t-mini); max-width: 100%; }
-.crm-hd-opiekun > span { overflow: hidden; text-overflow: ellipsis; }
-
-.crm-hd-chipy { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.crm-hd-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  max-width: 100%;
-  min-height: 30px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: #F3F4F6;
-  font-family: inherit;
-  font-size: var(--crm-t-mini);
-  color: #1F2937;
-  cursor: pointer;
-  text-align: left;
-}
-.crm-hd-chip .crm-ikona { width: 15px; height: 15px; color: #6B7280; flex: none; }
-.crm-hd-chip > span:not(.crm-blysk) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.crm-hd-adres:hover { background: #EEF0FC; color: #5B6CDB; }
-.crm-hd-adres:hover .crm-ikona { color: #5B6CDB; }
-.crm-hd-nip:hover { background: #E5E7EB; }
-.crm-hd-chipy > .crm-pill { padding: 4px 10px; border-radius: 8px; }
-
-.crm-hd-kafle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 10px; }
-.crm-hd-lewa { display: flex; flex-direction: column; gap: 6px; }
-.crm-hd-kafel {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: #F8F9FB;
-}
-.crm-hd-kafel-ik { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; }
-.crm-hd-kafel-ik .crm-ikona { width: 18px; height: 18px; }
-.crm-hd-kafel-txt { min-width: 0; }
-.crm-hd-kafel-lbl { font-size: var(--crm-t-mikro); color: #6B7280; }
-.crm-hd-kafel-val { font-size: var(--crm-t-maly); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.crm-hd-godz { padding: 8px 10px; border-radius: 8px; background: #F8F9FB; }
-.crm-hd-godz-lbl { font-size: var(--crm-t-mikro); color: #6B7280; margin-bottom: 4px; }
-.crm-hd-godz-lbl .crm-ikona { width: 12px; height: 12px; }
-.crm-hd-godz-rzad { display: flex; align-items: center; gap: 5px; font-size: var(--crm-t-mini); line-height: 1.75; }
-.crm-hd-kropka { font-size: 9px; }
-.crm-hd-godz-nazwa { flex: 1; min-width: 0; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.crm-hd-godz-val { font-weight: 600; white-space: nowrap; }
-.crm-hd-rozwin {
-  display: block;
-  margin-top: 4px;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  font-family: inherit;
-  font-size: var(--crm-t-mini);
-  color: var(--crm-brand);
-  cursor: pointer;
-}
-.crm-hd-rozwin:hover { text-decoration: underline; }
-.crm-hd-szczegoly[hidden] { display: none; }
-.crm-hd-alert { margin-top: 8px; padding: 4px 10px; border-radius: 8px; }
-.crm-firma-karta.crm-hd { padding: 10px 12px; }
-.crm-hd-bud { width: 36px; height: 36px; }
-.crm-hd-bud .crm-ikona { width: 20px; height: 20px; }
-
-/* ---------- 39. produkty szansy (lista Oferty) ---------- */
-
-.crm-tecs-poz-ceny { color: var(--crm-tekst-3); }
-.crm-tecs-legenda { flex: 1 1 100%; margin: 0; color: var(--crm-c-uwaga); }
-.crm-sz-podglad { display: block; padding: 8px 10px; background: #F8F9FB; border-color: transparent; border-radius: 12px; }
-.crm-sz-podglad > div:first-child { font-weight: 400; }
-.crm-tecs-podglad-rzad { display: flex; justify-content: space-between; gap: 10px; line-height: 1.8; }
-.crm-tecs-podglad-rzad > span:last-child { font-weight: 600; color: #374151; white-space: nowrap; }
-.crm-tecs-podglad-rzad.crm-nf-uwaga > span { color: var(--crm-c-uwaga); }
-.crm-tecs-podglad-suma {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid #E5E7EB;
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: var(--crm-t-mikro);
-  align-items: baseline;
-}
-.crm-tecs-podglad-suma > span:last-child { font-size: 17px; color: #5B6CDB; text-transform: none; }
-
-/* ---------- 40. przyciski kart szansy / TECS - rowna siatka 3 x 2 ---------- */
-
-.crm-karta-akcje {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  align-items: stretch;
-}
-.crm-karta-akcje > .crm-btn {
-  position: relative;
-  justify-content: center;
-  min-width: 0;
-  min-height: 34px;
-  padding: 5px 6px;
-  font-size: var(--crm-t-mini);
-  line-height: 1.2;
-  text-align: center;
-}
-.crm-karta-akcje > .crm-btn > span:not(.crm-blysk) { min-width: 0; overflow-wrap: anywhere; }
-.crm-karta-akcje > .crm-komunikat { grid-column: 1 / -1; }
-
-/* "Nowy Opps Soft" / "Nowy Opps TECS" nad lista w widoku maila - na cala szerokosc */
-.crm-nowa-szansa { display: flex; width: 100%; justify-content: center; }
-
-/* ---------- 41. kopiowanie zalacznika do Dokumentow firmy ---------- */
-
-.crm-zal-dok:hover:not(:disabled) { background: #FEF3E2; color: #D97706; }
+/* kopiowanie zalacznika do Dokumentow firmy - wybor folderu */
 .crm-wybor-folderu { margin: 4px 0 8px; }
 .crm-wybor-folderu .crm-dok-okruszki { margin: 4px 0 6px; }
-.crm-wybor-folderu .crm-dok-lista { max-height: 220px; overflow-y: auto; }
+.crm-wybor-folderu .crm-dok-lista {
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: none;
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-s);
+}
 .crm-wybor-akcje {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   margin-top: 6px;
 }
-.crm-wybor-akcje .crm-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; }
+.crm-wybor-akcje .crm-btn { min-width: 0; }
 .crm-wybor-folderu .crm-dok-nowy:empty { display: none; }
 
-/* ---------- 42. filtry zakladki Supporty ---------- */
+/* ---------- 37. PREFERENCJE UZYTKOWNIKA ---------- */
 
-.crm-sup-filtry {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 8px;
-  margin-bottom: 8px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .crm-card, .crm-firma-card, .crm-kontakt-card, .crm-kafel, .crm-nota,
+  .crm-szkolenie, .crm-detale, .crm-ostrzezenie, .crm-komunikat,
+  .crm-nota-usun, .crm-blysk, .crm-status.crm-laduje,
+  .crm-card.crm-zapisano, .crm-card.crm-blad-walidacji {
+    animation: none !important;
+  }
+  .crm-detale { clip-path: none; opacity: 1; }
+  .crm-btn:active, .crm-firma-card:active, .crm-kk-akcja:active,
+  .crm-nav-btn:active, .crm-podnav-btn:active, .crm-segment-btn:active,
+  .crm-chip-wybor:active, .crm-zakladka:active,
+  .crm-dol-btn:active svg { transform: none !important; }
 }
-.crm-sup-filtry .crm-select { width: 100%; margin-bottom: 4px; }
-.crm-sup-wyczysc { grid-column: 1 / -1; justify-self: start; }
-.crm-sup-wyczysc[hidden], .crm-sup-wiecej[hidden] { display: none; }
-.crm-sup-wiecej { display: block; width: 100%; margin-top: 4px; }
 
-/* Szanse + TECS jako para w pasku zakladek firmy */
-/* rowna siatka 3 kolumn: Szanse i TECS wypadaja obok siebie w drugim rzedzie */
-.crm-zakladki { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding-bottom: 6px; }
-.crm-zakladki-para { display: contents; }
-.crm-zakladki .crm-zakladka { padding: 7px 6px; }
-.crm-zakladka > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.crm-zakladki-akcje { display: flex; gap: 6px; padding-bottom: 8px; }
-.crm-zakladki-akcje .crm-zakladka { flex: 1 1 0; padding: 7px 6px; }
+/* wiekszy kontrast na zyczenie systemu */
+@media (prefers-contrast: more) {
+  :root {
+    --crm-tekst-2: #3A3A3F;
+    --crm-tekst-3: #55555A;
+    --crm-linia: #B9B9C0;
+    --crm-linia-mocna: #8E8E96;
+    --crm-cien-karta: 0 0 0 1px var(--crm-linia-mocna);
+  }
+}
 
-/* usuwanie wlasnego zgloszenia */
-.crm-zgl-usun { display: inline-flex; align-items: center; gap: 5px; color: #DC2626; }
-.crm-zgl-usun:hover:not(:disabled) { background: #FEE2E2; color: #DC2626; }
-.crm-zgl-usun .crm-ikona { width: 13px; height: 13px; }
-.crm-zgl-usun[hidden] { display: none; }
+/* bez rozmycia tla paski sa pelne, zeby tresc pod spodem nie przebijala */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --crm-szklo: rgba(242, 242, 247, .97); }
+}
 
-/* edycja szansy w panelu "Status i etap" */
-.crm-szansa-edytuj { display: inline-flex; align-items: center; gap: 5px; margin: 6px 0 2px; }
-.crm-szansa-edytuj .crm-ikona { width: 13px; height: 13px; }
-.crm-szansa-edytuj[hidden], .crm-ns [hidden] { display: none; }
+/* panel bywa wezszy niz 320 px przy podzielonym oknie Outlooka */
+@media (max-width: 300px) {
+  .crm-brand    { padding: 10px 10px 6px; }
+  .crm-nav      { margin: 0 0 10px; padding: 7px 10px; }
+  #item-subject { padding-left: 8px; padding-right: 8px; }
+  .crm-podnav-btn { font-size: var(--crm-t-mini); padding: 4px 2px; }
+  .crm-card, .crm-firma-card, .crm-kontakt-card,
+  .crm-kafel, .crm-nota, .crm-szkolenie { padding-left: 10px; padding-right: 10px; }
+}
+/* TEST przeplywu HTTP przy nowym zgloszeniu (tymczasowe) */
+.crm-test-flow { border: 1px dashed var(--crm-pomarancz); color: var(--crm-pomarancz); }
+.crm-test-dziennik {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-tlo-2);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--crm-tekst);
+}

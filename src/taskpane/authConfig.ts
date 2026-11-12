@@ -26,3 +26,12 @@ export const SUPPORT_MAILBOX = "support@mesco.com.pl";
 export const POWERAPPS_URL =
   "https://apps.powerapps.com/play/e/default-4ad84be0-f918-4dfa-8006-a408554ec666" +
   "/a/47ff301e-7b3e-4df7-8988-e916ea18451b?tenantId=4ad84be0-f918-4dfa-8006-a408554ec666";
+/** Zakres tokenu do Power Automate. Podwojny ukosnik jest celowy:
+ *  identyfikator zasobu konczy sie ukosnikiem, pojedynczy daje blad uprawnien. */
+export const flowScopes = ["https://service.flow.microsoft.com//User"];
+
+/** Adres wyzwalacza HTTP przeplywu Support_TicketCRM_forward_HTTP (wymaga tokenu konta z tenanta). */
+export const FLOW_URL =
+  "https://default4ad84be0f9184dfa8006a408554ec6.66.environment.api.powerplatform.com:443" +
+  "/powerautomate/automations/direct/cu/16/workflows/443eadb1013444258afc8523c7ccf7e8" +
+  "/triggers/manual/paths/invoke?api-version=1";
