@@ -414,6 +414,25 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
   return { ticketId: Number(dane.ticketId), temat: String(dane.temat ?? ""), status: res.status, tresc };
 }
 
+/** Wszystkie elementy listy (strony po 999) - do list bez filtra, np. wnioski HR dla administracji. */
+export async function getCalaLista(listName: string): Promise<ListItem[]> {
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const listId = await getListId(siteId, listName, token);
+  const zebrane: ListItem[] = [];
+  let url: string | null = `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields&$top=999`;
+  let strony = 0;
+  while (url && strony < 50) {
+    const r: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(`Graph ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+    zebrane.push(...dane.value);
+    url = dane["@odata.nextLink"] ?? null;
+    strony++;
+  }
+  return zebrane;
+}
+
 /** Awaryjne czyszczenie stanu MSAL - do podpiecia pod przycisk, gdy logowanie sie zablokuje. */
 export async function resetAuth(): Promise<void> {
   const app = await getMsal();

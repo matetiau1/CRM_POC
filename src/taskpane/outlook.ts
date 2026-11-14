@@ -5,7 +5,7 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
+  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getCalaLista, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
 } from "./graphService";
 import type { ListItem, PozycjaCennika, CenaTecs, ProgRabatu } from "./graphService";
 import {
@@ -30,6 +30,7 @@ Office.onReady((info) => {
   document.getElementById("nav-companies")!.onclick = () => void pokazFirmy();
   document.getElementById("nav-contacts")!.onclick = () => void pokazKontakty();
   document.getElementById("nav-crm")!.onclick = () => window.open(POWERAPPS_URL, "_blank");
+  document.getElementById("nav-hr")!.onclick = () => void pokazHR();
   // wejscie w Szanse zawsze od szans sprzedazy - TECS to przelacznik w srodku
   document.getElementById("nav-szanse")!.onclick = () => {
     szanseRodzaj = "Sprzedaż";
@@ -66,7 +67,7 @@ async function start() {
 
 // ---------------------------------------------------------------- stan
 
-type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty" | "szanse";
+type Widok = "zgloszenia" | "firmy" | "firma" | "kontakty" | "szanse" | "hr";
 let widok: Widok = "zgloszenia";
 let ostatniaFirma: Company | null = null;
 
@@ -121,11 +122,59 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-type NavId = "nav-szanse" | "nav-tickets" | "nav-companies" | "nav-contacts";
+type NavId = "nav-szanse" | "nav-tickets" | "nav-companies" | "nav-contacts" | "nav-hr";
+
+// "Zobacz szkolenia" z paska klienta - zakladka Szkolenia pokazuje tylko te osobe
+let szkoleniaOsoba: { firma: string; nazwa: string } | null = null;
+// karta firmy otwarta z paska klienta w Support - "wroc" prowadzi z powrotem do zgloszenia
+let powrotDoSupportu = false;
+
+/** Pasek nad dolnym menu w widoku Support: szkolenia nadawcy i "Klient posiada" jego firmy. */
+async function pasekKlienta(nadawca: string, wywolanie: number) {
+  if (!nadawca || zMESco(nadawca)) return;
+  let kontakt: any = null;
+  try {
+    kontakt = await kontaktDlaNadawcy(nadawca);
+  } catch {
+    return;
+  }
+  if (wywolanie !== pokazZglLicznik || widok !== "zgloszenia") return;
+  const f = (kontakt?.fields ?? {}) as Record<string, unknown>;
+  const guid = String(f.IdentyfikatorCompanies ?? "");
+  if (!guid) return;
+  const k = toContact(kontakt);
+  const c = { guid, nazwa: k.firmaId } as Company;
+
+  const pasek = el("div", "crm-pasek-klienta");
+  const szk = przyciskIk("crm-pasek-klienta-btn", "czapka", `Zobacz szkolenia ${k.imieNazwisko || nadawca}`);
+  szk.title = `Szkolenia, w których brał(a) udział ${k.imieNazwisko || nadawca}`;
+  szk.onclick = () => {
+    powrotDoSupportu = true;
+    szkoleniaOsoba = { firma: guid, nazwa: k.imieNazwisko };
+    zakladkaFirmy = "Szkolenia";
+    void pokazFirma(c);
+  };
+  const pos = przyciskIk("crm-pasek-klienta-btn", "paczka", "Klient posiada");
+  pos.title = `Licencje firmy ${k.firmaId || ""}`.trim();
+  pos.onclick = () => {
+    powrotDoSupportu = true;
+    zakladkaFirmy = "Posiadane";
+    void pokazFirma(c);
+  };
+  pasek.append(szk, pos);
+  // tuz nad dolnym menu - jego wysokosc zalezy od systemu i powiekszenia
+  const dol = document.querySelector<HTMLElement>(".crm-dol");
+  pasek.style.bottom = `${dol?.offsetHeight ?? 52}px`;
+  root().appendChild(pasek);
+  root().classList.add("crm-z-paskiem-klienta");
+}
 
 function ustawNaglowek(tytul: string, aktywny: NavId) {
+  root().classList.remove("crm-z-paskiem-klienta");
+  // karta firmy tez ma "nav-companies" - flage zdejmuje dopiero inny widok albo lista firm
+  if (aktywny !== "nav-companies") powrotDoSupportu = false;
   document.getElementById("nav-title")!.textContent = tytul;
-  (["nav-szanse", "nav-tickets", "nav-companies", "nav-contacts"] as NavId[]).forEach((id) =>
+  (["nav-szanse", "nav-tickets", "nav-companies", "nav-contacts", "nav-hr"] as NavId[]).forEach((id) =>
     document.getElementById(id)!.classList.toggle("crm-dol-akt", id === aktywny)
   );
 }
@@ -222,6 +271,11 @@ const IKONY = {
   wideo: '<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>',
   spinacz: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   wyslij: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  slonce: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+  dom: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  termometr: '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
+  serce: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  medal: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
   nowaSzansa: '<circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/>',
   kalkulator: '<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>',
   blyskawica: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
@@ -737,6 +791,21 @@ function szczegoly(t: Ticket, poZapisie: () => void): HTMLElement {
   return box;
 }
 
+/** Dymek po zalozeniu zgloszenia: 15 s, potem odjezdza w prawo i znika. */
+function komunikatTeams(
+  miejsce: HTMLElement,
+  tekst = "Dostaniesz powiadomienie na Teams, że support został poprawnie założony w systemie. " +
+    "Dopiero wtedy opiekun niech sprawdzi swój folder."
+) {
+  const d = el("div", "crm-dymek-teams");
+  d.append(ikona("dzwonek"), el("span", undefined, tekst));
+  miejsce.appendChild(d);
+  setTimeout(() => {
+    d.classList.add("crm-dymek-wyjdz");
+    setTimeout(() => d.remove(), 450);
+  }, 15000);
+}
+
 async function panelNowego() {
   const item = Office.context.mailbox.item as Office.MessageRead;
   if (!item) return;
@@ -744,7 +813,9 @@ async function panelNowego() {
   const temat = item.subject ?? "";
   if (ticketIdZTematu(temat) !== null) return; // watek istniejacego zgloszenia
 
-  const nadawca = (item.from?.emailAddress ?? "").toLowerCase();
+  // mail od MESco (np. wlasna odpowiedz) - zgloszenie dla klienta z "Do" / "DW"
+  const klient = await klientMaila(item);
+  const nadawca = klient.adres;
   if (!nadawca) return;
 
   const box = el("div", "crm-nowe");
@@ -760,7 +831,7 @@ async function panelNowego() {
 
   if (!kontakt) {
     box.className = "crm-nowe crm-nowe-brak";
-    await panelNowegoKontaktu(box, nadawca, item.from?.displayName ?? "");
+    await panelNowegoKontaktu(box, nadawca, klient.nazwa);
     return;
   }
 
@@ -964,6 +1035,7 @@ async function panelNowego() {
       const odsw = el("button", "crm-btn crm-btn-cichy", "Odśwież listę") as HTMLButtonElement;
       odsw.onclick = () => void pokazZgloszenia();
       box.appendChild(odsw);
+      komunikatTeams(box);
     } catch (e: any) {
       komunikat.textContent = e?.message ?? String(e);
       komunikat.className = "crm-komunikat crm-blad";
@@ -1264,6 +1336,20 @@ async function formularzKontaktu(
   };
 }
 
+/** Kontakt zbudowany z danych zgloszenia - gdy osoby nie ma w Contacts. */
+function kontaktZeZgloszenia(t: Ticket): Contact {
+  return toContact({
+    id: "",
+    fields: {
+      "Imi_x0119__x0020_i_x0020_nazwisk": t.osoba,
+      Email: t.osobaMail,
+      IdentyfikatorCompanies: t.companyId,
+      FirmaID: t.firma,
+      ContactGUID: t.contactId,
+    },
+  });
+}
+
 async function panelZgloszenia() {
   const item = Office.context.mailbox.item as Office.MessageRead;
   if (!item) return;
@@ -1315,6 +1401,39 @@ async function panelZgloszenia() {
  
   if (t.zamkniete) {
     box.appendChild(el("div", "crm-watek-info", "Zgłoszenie jest już zamknięte."));
+    const otworz = przyciskIk("crm-btn", "klodkaOtwarta", "Otwórz zgłoszenie");
+    const nowyNr = przyciskIk("crm-btn crm-btn-cichy", "klucz", "Utwórz nowy numer");
+    const kom = el("span", "crm-komunikat");
+    const rzadZ = el("div", "crm-akcje crm-watek-zamk");
+    rzadZ.append(otworz, nowyNr, kom);
+    box.appendChild(rzadZ);
+
+    otworz.onclick = async () => {
+      otworz.disabled = nowyNr.disabled = true;
+      kom.textContent = "Otwieranie...";
+      kom.className = "crm-komunikat";
+      try {
+        await updateTicketFields(t.id, { Status: false, Datazako_x0144_czenia: null }, t.etag);
+        box.remove();
+        void panelZgloszenia();
+      } catch (e: any) {
+        kom.textContent = e?.message ?? String(e);
+        kom.className = "crm-komunikat crm-blad";
+        otworz.disabled = nowyNr.disabled = false;
+      }
+    };
+    // nowe zgloszenie reczne dla tej samej osoby - jak "klucz" na karcie kontaktu
+    nowyNr.onclick = async () => {
+      nowyNr.disabled = true;
+      let k: Contact;
+      try {
+        const kt = await kontaktDlaNadawcy(t.osobaMail || (item.from?.emailAddress ?? "").toLowerCase());
+        k = kt ? toContact(kt) : kontaktZeZgloszenia(t);
+      } catch {
+        k = kontaktZeZgloszenia(t);
+      }
+      void formularzReczny(box, nowyNr, kom, k, { guid: t.companyId || k.companyGuid, nazwa: t.firma } as Company);
+    };
     return;
   }
  
@@ -1339,11 +1458,42 @@ async function panelZgloszenia() {
   box.appendChild(podpowiedz);
  
   const zamknij = el("button", "crm-btn", "Zamknij zgłoszenie") as HTMLButtonElement;
+  const zapiszBez = el("button", "crm-btn crm-btn-cichy", "Zapisz") as HTMLButtonElement;
+  zapiszBez.title = "Zapisz czas i opis bez zamykania zgłoszenia";
   const komunikat = el("span", "crm-komunikat");
   const rzad = el("div", "crm-akcje");
-  rzad.appendChild(zamknij);
-  rzad.appendChild(komunikat);
+  rzad.append(zamknij, zapiszBez, komunikat);
   box.appendChild(rzad);
+
+  // zapis w trakcie pracy - zgloszenie zostaje otwarte
+  zapiszBez.onclick = async () => {
+    const pola: Record<string, unknown> = { Opis: ta.value };
+    if (czas.value.trim()) {
+      const g = parseGodziny(czas.value);
+      if (Number.isNaN(g)) {
+        komunikat.textContent = "Czas musi być liczbą (np. 1,5)";
+        komunikat.className = "crm-komunikat crm-blad";
+        return;
+      }
+      pola.Czas = g;
+    }
+    zapiszBez.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      const wynik = await updateTicketFields(t.id, pola, t.etag);
+      t.etag = String((wynik as any)["@odata.etag"] ?? t.etag);
+      t.opis = ta.value;
+      if (pola.Czas !== undefined) t.czas = pola.Czas as number;
+      komunikat.textContent = "Zapisano — zgłoszenie dalej otwarte";
+      komunikat.className = "crm-komunikat crm-ok";
+    } catch (e: any) {
+      komunikat.textContent = e?.message ?? String(e);
+      komunikat.className = "crm-komunikat crm-blad";
+    } finally {
+      zapiszBez.disabled = false;
+    }
+  };
  
   const sprawdz = () => {
     const g = parseGodziny(czas.value);
@@ -1404,7 +1554,8 @@ async function pokazZgloszenia() {
   const wywolanie = ++pokazZglLicznik;
 
   const item = Office.context.mailbox.item as Office.MessageRead;
-  const nadawca = (item?.from?.emailAddress ?? "").toLowerCase();
+  // przy wlasnej odpowiedzi (nadawca z MESco) liczy sie klient z "Do" / "DW"
+  const nadawca = (await klientMaila(item)).adres;
   const klucz = (await czySkrzynkaSupportu(item)) ? "support" : "wlasna";
   if (wywolanie !== pokazZglLicznik || widok !== "zgloszenia") return; // w miedzyczasie zmiana maila/widoku
   let zakresZgloszen = zakresy[klucz];
@@ -1457,6 +1608,7 @@ async function pokazZgloszenia() {
 
   void panelNowego();
   void panelZgloszenia();
+  void pasekKlienta(nadawca, wywolanie);
 
   const s = status("Pobieranie zgłoszeń...");
   const lista = el("div");
@@ -1599,6 +1751,24 @@ const zMESco = (adres: string) => adres.endsWith("@" + DOMENA_MESCO);
  * Adresy klienta w otwartym mailu: nadawca, a gdy pisal ktos z MESco -
  * odbiorcy "Do", potem "DW", bez adresow MESco.
  */
+/**
+ * Klient otwartego maila: pierwszy z adresyKlienta(), ktory jest w kontaktach CRM,
+ * a gdy zaden - pierwszy z nich. Pusty adres = w mailu sa tylko adresy MESco.
+ */
+async function klientMaila(item: Office.MessageRead | undefined): Promise<{ adres: string; nazwa: string }> {
+  const adresy = adresyKlienta(item);
+  let adres = adresy[0] ?? "";
+  for (const a of adresy) {
+    if (await kontaktDlaNadawcy(a).catch(() => null)) {
+      adres = a;
+      break;
+    }
+  }
+  const wszyscy = [item?.from, ...(item?.to ?? []), ...(item?.cc ?? [])];
+  const nazwa = wszyscy.find((r) => (r?.emailAddress ?? "").toLowerCase() === adres)?.displayName ?? "";
+  return { adres, nazwa };
+}
+
 function adresyKlienta(item: Office.MessageRead | undefined): string[] {
   const od = (item?.from?.emailAddress ?? "").toLowerCase();
   if (od && !zMESco(od)) return [od];
@@ -1816,6 +1986,7 @@ function kartaFirmy(c: Company, liczby?: Promise<Map<string, number>>): HTMLElem
 
 async function pokazFirmy(fraza = "", opiekunWybrany = "") {
   widok = "firmy";
+  powrotDoSupportu = false;
   ustawNaglowek("Firmy", "nav-companies");
   root().innerHTML = "";
 
@@ -2361,8 +2532,32 @@ function kartaKontaktu(k: Contact, c: Company, poUsunieciu?: () => void, linkFir
   const komunikat = el("span", "crm-komunikat");
   card.appendChild(komunikat);
 
-  zgloszenie.onclick = () => void formularzReczny(card, zgloszenie, komunikat, k, c);
-  szybka.onclick = () => void formularzNotatki(card, szybka, komunikat, k, c);
+  // drugie klikniecie w ikone zamyka otwarty formularz (zgloszenie / szybka notatka)
+  const przelaczFormularz = (b: HTMLButtonElement, otworz: () => Promise<void>) => {
+    let otwarty: Element | null = null;
+    b.onclick = () => {
+      if (otwarty?.isConnected) {
+        otwarty.remove();
+        otwarty = null;
+        b.classList.remove("crm-kk-otwarte");
+        return;
+      }
+      const przed = card.lastElementChild;
+      void otworz(); // formularz dokleja sie do karty synchronicznie, przed pierwszym await
+      otwarty = card.lastElementChild !== przed ? card.lastElementChild : null;
+      b.disabled = false; // formularz blokuje przycisk - tu ma dzialac jako przelacznik
+      b.classList.toggle("crm-kk-otwarte", !!otwarty);
+    };
+    // formularz zamkniety od srodka (Anuluj, zapis) - zdejmujemy podswietlenie ikony
+    new MutationObserver(() => {
+      if (otwarty && !otwarty.isConnected) {
+        otwarty = null;
+        b.classList.remove("crm-kk-otwarte");
+      }
+    }).observe(card, { childList: true });
+  };
+  przelaczFormularz(zgloszenie, () => formularzReczny(card, zgloszenie, komunikat, k, c));
+  przelaczFormularz(szybka, () => formularzNotatki(card, szybka, komunikat, k, c));
 
   doOutlooka.onclick = async () => {
     doOutlooka.disabled = true;
@@ -2435,7 +2630,11 @@ function kartaKontaktu(k: Contact, c: Company, poUsunieciu?: () => void, linkFir
   return card;
 }
 
-/** Reczne zgloszenie - bez MailID i MailSubject, bo nie wychodzi z wiadomosci. */
+/**
+ * Reczne zgloszenie z kontaktu - odpowiednik SupportNewForm z Power Apps:
+ * status, Support Day, PreSales (zlecil, cel prac), inny opiekun, daty, czas i opis.
+ * Bez MailID i MailSubject, bo nie wychodzi z wiadomosci.
+ */
 async function formularzReczny(
   card: HTMLElement,
   btn: HTMLButtonElement,
@@ -2445,97 +2644,223 @@ async function formularzReczny(
 ) {
   btn.disabled = true;
 
-  const box = el("div", "crm-nowe");
+  const box = el("div", "crm-nowe crm-demo crm-su");
   card.appendChild(box);
+  const naglowek = el("div", "crm-ns-naglowek");
+  const ik = el("span", "crm-ns-ik crm-su-ik");
+  ik.appendChild(ikona("klucz"));
+  const tytul = el("div");
+  tytul.append(
+    el("div", "crm-ns-tytul", "Nowe zgłoszenie support"),
+    el("div", "crm-nowe-info", `${k.firmaId || c.nazwa}  ·  ${k.imieNazwisko}`)
+  );
+  naglowek.append(ik, tytul);
+  box.appendChild(naglowek);
 
-  box.appendChild(el("label", "crm-label", "Opiekun supportu"));
+  // --- cztery przelaczniki jak kafle w Power Apps ---
+  const kafle = el("div", "crm-su-kafle");
+  box.appendChild(kafle);
+  const przelacznik = (etykieta: string, nie: string, tak: string) => {
+    const kafel = el("label", "crm-su-kafel") as HTMLLabelElement;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "crm-su-cb";
+    const stan = el("span", "crm-su-stan", nie);
+    kafel.append(el("span", "crm-su-lbl", etykieta), cb, stan);
+    cb.addEventListener("change", () => {
+      stan.textContent = cb.checked ? tak : nie;
+      kafel.classList.toggle("crm-su-wl", cb.checked);
+    });
+    kafle.appendChild(kafel);
+    return cb;
+  };
+  const zamkniete = przelacznik("Status zgłoszenia", "Otwarty", "Zamknięty");
+  const supportDay = przelacznik("Support Day", "Nie", "Tak");
+  const preSales = przelacznik("Dla sprzedaży (PreSales)", "Nie", "Tak");
+  const inny = przelacznik("Inny opiekun", "Nie", "Tak");
+
+  // --- daty, czas, inny opiekun ---
+  const rzad1 = el("div", "crm-demo-okres");
+  box.appendChild(rzad1);
+  const kol = (rzad: HTMLElement, typ: string) => {
+    const kk = el("div");
+    const lbl = el("label", "crm-label");
+    kk.appendChild(lbl);
+    const i = document.createElement("input");
+    i.type = typ;
+    i.className = "crm-input";
+    kk.appendChild(i);
+    rzad.appendChild(kk);
+    return { i, lbl, kk };
+  };
+  const dataOtw = kol(rzad1, "date");
+  dataOtw.lbl.textContent = "Data otwarcia *";
+  dataOtw.i.value = dzisISO();
+  const dataZam = kol(rzad1, "date");
+  const rzad2 = el("div", "crm-demo-okres");
+  box.appendChild(rzad2);
+  const czas = kol(rzad2, "text");
+  czas.i.inputMode = "decimal";
+  czas.i.placeholder = "np. 1,5";
+  const opiekunKol = el("div");
+  opiekunKol.appendChild(el("label", "crm-label", "Opiekun supportu"));
   const wybor = document.createElement("select");
   wybor.className = "crm-select";
-  box.appendChild(wybor);
+  opiekunKol.appendChild(wybor);
+  rzad2.appendChild(opiekunKol);
 
-  let zalogowany = "";
-  try {
-    zalogowany = await getMojMail();
-  } catch {
-    zalogowany = (Office.context.mailbox.userProfile.emailAddress ?? "").toLowerCase();
-  }
+  // --- PreSales: zlecil i cel prac ---
+  const preBox = el("div", "crm-demo-okres");
+  box.appendChild(preBox);
+  const wyborPre = (etykieta: string) => {
+    const kk = el("div");
+    kk.appendChild(el("label", "crm-label", etykieta));
+    const s = document.createElement("select");
+    s.className = "crm-select";
+    kk.appendChild(s);
+    preBox.appendChild(kk);
+    return s;
+  };
+  const zlecil = wyborPre("Zlecił");
+  const cel = wyborPre("Cel prac");
 
-  let serwisanci: Awaited<ReturnType<typeof getSerwisanci>> = [];
-  try {
-    serwisanci = await getSerwisanci();
-  } catch (e: any) {
-    box.appendChild(el("div", "crm-nowe-info", `Nie pobrano serwisantów: ${e?.message ?? e}`));
-  }
+  const opisLbl = el("label", "crm-label");
+  box.appendChild(opisLbl);
+  const opis = document.createElement("textarea");
+  opis.className = "crm-textarea";
+  opis.rows = 4;
+  opis.placeholder = "Czego dotyczy zgłoszenie, co zostało zrobione…";
+  box.appendChild(opis);
 
-  serwisanci.forEach((s, idx) => {
-    const opt = document.createElement("option");
-    opt.value = String(idx);
-    opt.textContent = s.nazwa;
-    if (s.mail === zalogowany) opt.selected = true;
-    wybor.appendChild(opt);
-  });
-  if (!serwisanci.some((s) => s.mail === zalogowany)) {
-    const pusta = document.createElement("option");
-    pusta.value = "";
-    pusta.textContent = "— wybierz opiekuna —";
-    pusta.selected = true;
-    wybor.insertBefore(pusta, wybor.firstChild);
-  }
-
-  const zapisz = el("button", "crm-btn", "Załóż zgłoszenie") as HTMLButtonElement;
+  const info = el("div", "crm-su-info");
+  box.appendChild(info);
+  const zapisz = el("button", "crm-btn", "Utwórz zgłoszenie") as HTMLButtonElement;
   const anuluj = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
   const rzad = el("div", "crm-akcje");
-  rzad.appendChild(zapisz);
-  rzad.appendChild(anuluj);
+  rzad.append(zapisz, anuluj);
   box.appendChild(rzad);
-
   anuluj.onclick = () => {
     box.remove();
     btn.disabled = false;
   };
 
-  zapisz.onclick = async () => {
-    const wybrany = serwisanci[Number(wybor.value)];
-    if (!wybrany) {
-      komunikat.textContent = "Wybierz opiekuna";
-      komunikat.className = "crm-komunikat crm-blad";
-      return;
-    }
+  // --- dane do list: zalogowany, serwisanci, opcje Zlecil / Cel ---
+  let zalogowany = "";
+  let mojaNazwa = "";
+  let serwisanci: Awaited<ReturnType<typeof getSerwisanci>> = [];
+  try {
+    const [m, n, sw, zl, ce] = await Promise.all([
+      getMojMail().catch(() => (Office.context.mailbox.userProfile.emailAddress ?? "").toLowerCase()),
+      getMojaNazwa().catch(() => Office.context.mailbox.userProfile.displayName ?? ""),
+      getSerwisanci().catch(() => [] as Awaited<ReturnType<typeof getSerwisanci>>),
+      getChoiceOptions("Support", "Zlecil").catch(() => [] as string[]),
+      getChoiceOptions("Support", "Cel").catch(() => [] as string[]),
+    ]);
+    zalogowany = m.trim().toLowerCase();
+    mojaNazwa = n.trim();
+    serwisanci = sw;
+    const opcje = (s: HTMLSelectElement, lista: string[], pusta: string) =>
+      ["", ...lista].forEach((v) => {
+        const o = document.createElement("option");
+        o.value = v;
+        o.textContent = v || pusta;
+        s.appendChild(o);
+      });
+    opcje(zlecil, zl, "wybierz zleceniodawcę…");
+    opcje(cel, ce, "wybierz cel prac…");
+  } catch (e: any) {
+    box.insertBefore(el("div", "crm-nowe-info", `Nie pobrano opcji: ${e?.message ?? e}`), info);
+  }
+  const pusta = document.createElement("option");
+  pusta.value = "";
+  pusta.textContent = "wybierz opiekuna…";
+  wybor.appendChild(pusta);
+  serwisanci.forEach((s, idx) => {
+    if (s.mail === zalogowany) return; // "inny" opiekun - siebie nie wybierasz
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    opt.textContent = s.nazwa;
+    wybor.appendChild(opt);
+  });
 
-    zapisz.disabled = true;
-    wybor.disabled = true;
+  // --- widocznosc i wymagania zalezne od przelacznikow ---
+  function sprawdz(): boolean {
+    const zam = zamkniete.checked;
+    dataZam.lbl.textContent = zam ? "Data zamknięcia *" : "Data zamknięcia";
+    czas.lbl.textContent = zam ? "Czas [h] *" : "Czas [h]";
+    opisLbl.textContent = zam ? "Opis supportu *" : "Opis supportu";
+    opiekunKol.hidden = !inny.checked;
+    preBox.hidden = !preSales.checked;
+
+    const g = parseGodziny(czas.i.value);
+    const brakZam = zam && (!dataZam.i.value || !czas.i.value.trim() || !(g > 0) || !opis.value.trim());
+    const brakOpiekuna = inny.checked && !wybor.value;
+    const ok = !!dataOtw.i.value && !brakZam && !brakOpiekuna && !Number.isNaN(g);
+    zapisz.disabled = !ok;
+    info.textContent = ok
+      ? "Po zapisie zostanie utworzony ticket"
+      : !dataOtw.i.value ? "Uzupełnij datę otwarcia"
+      : Number.isNaN(g) ? "Czas musi być liczbą (np. 1,5)"
+      : brakZam ? "Zamknięte zgłoszenie wymaga daty zamknięcia, czasu i opisu"
+      : "Wybierz innego opiekuna";
+    info.className = ok ? "crm-su-info crm-su-info-ok" : "crm-su-info crm-su-info-brak";
+    return ok;
+  }
+  // zamkniecie podpowiada dzisiejsza date zamkniecia, jak w Power Apps
+  zamkniete.addEventListener("change", () => {
+    if (zamkniete.checked && !dataZam.i.value) dataZam.i.value = dzisISO();
+    sprawdz();
+  });
+  [supportDay, preSales, inny].forEach((x) => x.addEventListener("change", sprawdz));
+  [dataOtw.i, dataZam.i, czas.i, wybor].forEach((x) => x.addEventListener("input", sprawdz));
+  wybor.onchange = sprawdz;
+  opis.oninput = sprawdz;
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = anuluj.disabled = true;
     komunikat.textContent = "Zakładanie...";
     komunikat.className = "crm-komunikat";
 
-    const dzis = new Date();
-    const dataISO = new Date(Date.UTC(
-      dzis.getFullYear(), dzis.getMonth(), dzis.getDate(), 7, 0, 0
-    )).toISOString();
+    // opiekun: wybrany "inny" albo zalogowany
+    const wybrany = inny.checked ? serwisanci[Number(wybor.value)] : serwisanci.find((s) => s.mail === zalogowany);
+    const opiekunNazwa = wybrany?.nazwa ?? mojaNazwa;
+    const opiekunMail = wybrany?.mail ?? zalogowany;
+    const g = parseGodziny(czas.i.value);
 
     const pola: Record<string, unknown> = {
       Firma: k.firmaId || c.nazwa,
       Osoba: k.imieNazwisko,
       OsobaMail: k.email,
-      Data: dataISO,
-      Status: false,
+      Data: dzienSP(dataOtw.i.value),
+      Status: zamkniete.checked,
+      SupportDay: supportDay.checked,
+      Dla_sprzeda_x017c_y: preSales.checked,
+      AnsysHelp: inny.checked,
       IdentyfikatorContact: k.guid,
       IdentyfikatorCompanies: k.companyGuid || c.guid,
-      MailCreator: wybrany.mail,
-      Dodatkowy_opiekun: wybrany.nazwa,
+      MailCreator: opiekunMail,
+      Dodatkowy_opiekun: opiekunNazwa,
+      Opis: opis.value,
     };
-    if (wybrany.siteId !== null) pola["Opiekun_supportuLookupId"] = String(wybrany.siteId);
-
+    if (dataZam.i.value) pola["Datazako_x0144_czenia"] = dzienSP(dataZam.i.value);
+    if (czas.i.value.trim()) pola.Czas = g;
+    if (preSales.checked && zlecil.value) pola.Zlecil = zlecil.value;
+    if (preSales.checked && cel.value) pola.Cel = cel.value;
     try {
+      const siteId = wybrany?.siteId ?? (await getSiteUserId(opiekunMail).catch(() => null));
+      if (siteId !== null && siteId !== undefined) pola["Opiekun_supportuLookupId"] = String(siteId);
       await createTicket(pola);
       box.remove();
-      komunikat.textContent = `Założono dla ${wybrany.nazwa}`;
+      komunikat.textContent = `Ticket utworzony dla ${opiekunNazwa}`;
       komunikat.className = "crm-komunikat crm-ok";
-    } catch (e: any) {
-      komunikat.textContent = e?.message ?? String(e);
-      komunikat.className = "crm-komunikat crm-blad";
-      zapisz.disabled = false;
-      wybor.disabled = false;
       btn.disabled = false;
+      komunikatTeams(card, "Po poprawnym zarejestrowaniu zgłoszenia otrzymasz potwierdzenie na Teamsie.");
+    } catch (e: any) {
+      komunikat.textContent = `Nie udało się zapisać zgłoszenia: ${e?.message ?? e}`;
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = anuluj.disabled = false;
     }
   };
 }
@@ -2718,8 +3043,8 @@ async function formularzNotatki(
 function naglowekFirmy(c: Company): HTMLElement {
   const box = el("div", "crm-firma-head");
 
-  const powrot = el("button", "crm-powrot", "← wróć do firm") as HTMLButtonElement;
-  powrot.onclick = () => void pokazFirmy();
+  const powrot = el("button", "crm-powrot", powrotDoSupportu ? "← wróć do supportu" : "← wróć do firm") as HTMLButtonElement;
+  powrot.onclick = () => void (powrotDoSupportu ? pokazZgloszenia() : pokazFirmy());
   box.appendChild(powrot);
 
   const f = firmaPelna;
@@ -2884,6 +3209,7 @@ function naglowekFirmy(c: Company): HTMLElement {
     if (z === zakladkaFirmy) b.classList.add("crm-zakladka-akt");
     b.onclick = () => {
       zakladkaFirmy = z;
+      szkoleniaOsoba = null;
       void pokazFirma(c);
     };
     if (z === "Szanse" || z === "TECS" || z === "Demo") {
@@ -7393,10 +7719,26 @@ async function zakladkaPosiadane(box: HTMLElement, s: HTMLElement, c: Company) {
 async function zakladkaSzkolenia(box: HTMLElement, s: HTMLElement, c: Company) {
   // uwaga: ta lista uzywa GUIDFirmy, nie IdentyfikatorCompanies
   const items = await getByCompany("UczestnicySzkolen", c.guid, { pole: "GUIDFirmy", top: 100 });
-  const lista = items.map(toSzkolenie);
+  let lista = items.map(toSzkolenie);
+
+  // z paska klienta w Support - tylko szkolenia jednej osoby (lista ma tylko imie i nazwisko)
+  const osoba = szkoleniaOsoba?.firma === c.guid ? szkoleniaOsoba.nazwa : "";
+  if (osoba) {
+    const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+    lista = lista.filter((z) => norm(z.osoba) === norm(osoba));
+    const filtr = el("div", "crm-szk-filtr");
+    filtr.appendChild(poleIk("crm-szk-filtr-txt", "osoba", `Tylko: ${osoba}`));
+    const wszystkie = el("button", "crm-btn crm-btn-cichy", "Pokaż wszystkie") as HTMLButtonElement;
+    wszystkie.onclick = () => {
+      szkoleniaOsoba = null;
+      void pokazFirma(c);
+    };
+    filtr.appendChild(wszystkie);
+    box.appendChild(filtr);
+  }
   if (!lista.length) {
     s.textContent = "Szkolenia";
-    return pusto(box, "Brak szkoleń dla tej firmy.");
+    return pusto(box, osoba ? `${osoba} nie ma szkoleń w CRM.` : "Brak szkoleń dla tej firmy.");
   }
 
   // lista ma wiersz na uczestnika - grupujemy w jedno szkolenie z lista osob
@@ -7534,6 +7876,1176 @@ async function pokazKontakty() {
   szukaj.focus();
 }
 
+// ---------------------------------------------------------------- HR: wnioski urlopowe (ekran HR_1 z Power Apps)
+
+// administracja HR - widoki "Wnioski pracownikow" i "Pracownicy" (etap 2 i 3), usuwanie dowolnych wnioskow
+const HR_ADMIN = [
+  "mnowakowski@mesco.com.pl",
+  "mturczynska@mesco.com.pl",
+  "swowra@mesco.com.pl",
+  "uhorzela@mesco.com.pl",
+  "mszafarz@mesco.com.pl",
+];
+const HR_LISTA_PRACOWNIKOW = "HRMain";
+const HR_LISTA_WNIOSKOW = "HRsecond";
+const HR_DOMYSLNY_URLOP = 26;
+// L4 zaczyna sie od litery-cyfry, SharePoint koduje nazwe - Graph raz chce prefiks OData_, raz nie
+const HR_POLE_L4 = ["OData__x004c_4", "_x004c_4"];
+
+type TypWniosku = "Urlop" | "HO" | "L4" | "Opieka" | "Okolicznościowy";
+
+// kolory i ikony powiazane z reszta systemu - bez zmian wzgledem Power Apps
+const TYPY_WNIOSKOW: { typ: TypWniosku; kol: string; tlo: string; ik: keyof typeof IKONY }[] = [
+  { typ: "Urlop", kol: "#0D9488", tlo: "#E0F5F3", ik: "slonce" },
+  { typ: "HO", kol: "#2F6FD6", tlo: "#E8F0FD", ik: "dom" },
+  { typ: "L4", kol: "#DC2626", tlo: "#FEE2E2", ik: "termometr" },
+  { typ: "Opieka", kol: "#DB2777", tlo: "#FCE7F3", ik: "serce" },
+  { typ: "Okolicznościowy", kol: "#7C3AED", tlo: "#F1EAFE", ik: "medal" },
+];
+const TYP_NIEZNANY = { kol: "#6B7280", tlo: "#F3F4F6", ik: "kalendarz" as keyof typeof IKONY };
+
+type Wniosek = {
+  id: string;
+  pracownik: string;     // Pracownik1
+  przelozony: string;    // Supervisor1
+  od: string;            // PierwszyDzien
+  do: string;            // OstatniDzien
+  dni: number;           // LiczbaDni
+  godziny: number;       // Godziny
+  rodzaj: string;        // Rodzaj (tekst, awaryjnie)
+  urlop: boolean;
+  ho: boolean;
+  l4: boolean;
+  opieka: boolean;
+  okolicznosciowy: boolean;
+};
+
+type KartaPracownika = {
+  id: string;
+  nazwa: string;         // Pracownik1 - klucz w HRsecond
+  przelozony: string;    // Supervisor1
+  przelozonyId: string;  // SupervisorLookupId
+  guid: string;          // ContactGUID
+  urlop: number;         // IleUrlopu
+  pracownikId: string;   // PracownikLookupId - do zapisu wniosku za pracownika
+  pracuje: boolean;      // Status = true znaczy "nie pracuje"
+  dzial: string;         // Dzial
+  bhp: string;           // BHP - wazne do
+  lekarz: string;        // Lekarz - badania do
+  umowa: string;         // Umowa - umowa czasowa do
+  stala: boolean;        // StalaUmowa
+  koniec: string;        // DataKoncaPracy
+  etag: string;
+};
+
+const prawda = (v: unknown) => v === true;
+const liczba = (v: unknown) => (v == null || v === "" ? 0 : Number(v) || 0);
+
+function toWniosek(item: ListItem): Wniosek {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: String(f.id ?? item.id),
+    pracownik: String(f.Pracownik1 ?? ""),
+    przelozony: String(f.Supervisor1 ?? ""),
+    od: String(f.PierwszyDzien ?? ""),
+    do: String(f.OstatniDzien ?? ""),
+    dni: liczba(f.LiczbaDni),
+    godziny: liczba(f.Godziny),
+    rodzaj: String(f.Rodzaj ?? ""),
+    urlop: prawda(f.Urlop),
+    ho: prawda(f.HO),
+    l4: HR_POLE_L4.some((k) => prawda(f[k])),
+    opieka: prawda(f.Opieka),
+    okolicznosciowy: prawda(f.Okolicznosciowy),
+  };
+}
+
+function toKartaPracownika(item: ListItem): KartaPracownika {
+  const f = item.fields as Record<string, unknown>;
+  return {
+    id: String(f.id ?? item.id),
+    nazwa: String(f.Pracownik1 ?? ""),
+    przelozony: String(f.Supervisor1 ?? ""),
+    przelozonyId: String(f.SupervisorLookupId ?? ""),
+    guid: String(f.ContactGUID ?? ""),
+    urlop: f.IleUrlopu == null || f.IleUrlopu === "" ? HR_DOMYSLNY_URLOP : liczba(f.IleUrlopu),
+    pracownikId: String(f.PracownikLookupId ?? ""),
+    pracuje: f.Status !== true,
+    dzial: String(f.Dzial ?? ""),
+    bhp: String(f.BHP ?? ""),
+    lekarz: String(f.Lekarz ?? ""),
+    umowa: String(f.Umowa ?? ""),
+    stala: f.StalaUmowa === true,
+    koniec: String(f.DataKoncaPracy ?? ""),
+    etag: String(f["@odata.etag"] ?? (item as any)["@odata.etag"] ?? ""),
+  };
+}
+
+/** Typ wniosku - kolejnosc sprawdzania jak w Power Apps, Rodzaj tylko awaryjnie. */
+function typWniosku(w: Wniosek): string {
+  if (w.urlop) return "Urlop";
+  if (w.l4) return "L4";
+  if (w.opieka) return "Opieka";
+  if (w.okolicznosciowy) return "Okolicznościowy";
+  if (w.ho) return "HO";
+  return w.rodzaj || "—";
+}
+const wygladTypu = (typ: string) => TYPY_WNIOSKOW.find((t) => t.typ === typ) ?? TYP_NIEZNANY;
+
+/** Data z SharePointa jako dzien lokalny (bez godziny). */
+function dzienLokalny(v: string): Date | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+const isoDnia = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Polskie swieta ustawowe w danym roku (z Wielkanoca i Bozym Cialem), jako "rrrr-mm-dd". */
+const swietaCache = new Map<number, Set<string>>();
+function swietaPL(rok: number): Set<string> {
+  const z = swietaCache.get(rok);
+  if (z) return z;
+  // Wielkanoc - algorytm Meeusa/Jonesa/Butchera
+  const a = rok % 19, b = Math.floor(rok / 100), c = rok % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const miesiac = Math.floor((h + l - 7 * m + 114) / 31), dzien = ((h + l - 7 * m + 114) % 31) + 1;
+  const plus = (dni: number) => isoDnia(new Date(rok, miesiac - 1, dzien + dni));
+  const stale = ["01-01", "01-06", "05-01", "05-03", "08-15", "11-01", "11-11", "12-25", "12-26"];
+  if (rok >= 2025) stale.push("12-24"); // Wigilia wolna od 2025
+  const zbior = new Set([...stale.map((md) => `${rok}-${md}`), plus(1), plus(60)]); // Poniedzialek Wielkanocny, Boze Cialo
+  swietaCache.set(rok, zbior);
+  return zbior;
+}
+
+/** Dni robocze od-do wlacznie, bez sobot, niedziel i swiat ustawowych. */
+function dniRoboczeHR(od: Date | null, doD: Date | null): number {
+  if (!od || !doD || doD < od) return 0;
+  let n = 0;
+  for (const d = new Date(od); d <= doD; d.setDate(d.getDate() + 1)) {
+    const wd = d.getDay();
+    if (wd !== 0 && wd !== 6 && !swietaPL(d.getFullYear()).has(isoDnia(d))) n++;
+  }
+  return n;
+}
+
+const dataWniosku = (v: string) =>
+  dzienLokalny(v)?.toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) ?? "—";
+const dniOdmiana = (n: number) => `${n.toLocaleString("pl-PL")} ${n === 1 ? "dzień" : "dni"}`;
+
+/** Suma dni z wnioskow danego typu w roku (po PierwszyDzien). */
+function sumaDni(wnioski: Wniosek[], typ: TypWniosku, rok = new Date().getFullYear()): number {
+  return wnioski
+    .filter((w) => typWniosku(w) === typ && dzienLokalny(w.od)?.getFullYear() === rok)
+    .reduce((a, w) => a + w.dni, 0);
+}
+
+// stan widoku HR - filtry zostaja przy powrocie z formularza
+let hrArchiwalne = false;
+let hrFiltr = { od: "", do: "", rodzaj: "" };
+let pokazHRLicznik = 0;
+
+async function pokazHR() {
+  hrTryb = "moje";
+  widok = "hr";
+  ustawNaglowek("HR", "nav-hr");
+  const wywolanie = ++pokazHRLicznik;
+  root().innerHTML = "";
+  const s = status("Wczytywanie wniosków...");
+
+  let ja = "";
+  let mojMail = "";
+  let karta: KartaPracownika | null = null;
+  let wnioski: Wniosek[] = [];
+  try {
+    [ja, mojMail] = await Promise.all([getMojaNazwa().then((n) => n.trim()), getMojMail()]);
+    const [kartyRaw, wnRaw] = await Promise.all([
+      getByCompany(HR_LISTA_PRACOWNIKOW, ja, { pole: "Pracownik1", top: 5 }),
+      getByCompany(HR_LISTA_WNIOSKOW, ja, { pole: "Pracownik1", top: 999 }),
+    ]);
+    karta = kartyRaw.length ? toKartaPracownika(kartyRaw[0]) : null;
+    wnioski = wnRaw.map(toWniosek);
+  } catch (e: any) {
+    if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+    s.textContent = `Błąd: ${e?.message ?? e}`;
+    s.classList.add("crm-error");
+    return;
+  }
+  if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+  s.remove();
+  const admin = HR_ADMIN.includes(mojMail.trim().toLowerCase());
+  if (admin) przelacznikHR();
+
+  // --- naglowek: kto i przelozony ---
+  const glowa = el("div", "crm-hr-glowa");
+  const ik = el("span", "crm-hr-glowa-ik");
+  ik.appendChild(ikona("ludzie"));
+  const kto = el("div", "crm-hr-glowa-kto");
+  kto.append(
+    el("div", "crm-hr-glowa-nazwa", ja || "(nieznany użytkownik)"),
+    el("div", "crm-hr-glowa-sub", karta
+      ? `Przełożony: ${karta.przelozony || "—"}`
+      : "Brak kartoteki w HRMain — wnioski zapiszą się bez przełożonego.")
+  );
+  glowa.append(ik, kto);
+  root().appendChild(glowa);
+
+  // --- kafle za biezacy rok: pozostaly urlop pierwszy, bo po niego siega sie codziennie ---
+  const rok = new Date().getFullYear();
+  const wymiar = karta?.urlop ?? HR_DOMYSLNY_URLOP;
+  const wykorzystany = sumaDni(wnioski, "Urlop");
+  const pozostaly = wymiar - wykorzystany;
+  const kafle = el("div", "crm-hr-kafle");
+  const kafel = (etykieta: string, wartosc: number, kol: string, glowny = false) => {
+    const k = el("div", glowny ? "crm-hr-kafel crm-hr-kafel-glowny" : "crm-hr-kafel");
+    const v = el("div", "crm-hr-kafel-val", dniOdmiana(wartosc));
+    v.style.color = kol;
+    k.append(el("div", "crm-hr-kafel-lbl", etykieta), v);
+    kafle.appendChild(k);
+    return k;
+  };
+  kafel(`Pozostały urlop ${rok}`, pozostaly, "#0D9488", true).title = `Wymiar ${wymiar} − wykorzystane ${wykorzystany}`;
+  kafel("Wykorzystany urlop", wykorzystany, "#374151");
+  kafel("Dni na HO", sumaDni(wnioski, "HO"), "#2F6FD6");
+  kafel("Dni na L4", sumaDni(wnioski, "L4"), "#DC2626");
+  kafel("Dni opieki", sumaDni(wnioski, "Opieka"), "#DB2777");
+  root().appendChild(kafle);
+
+  // --- nowy wniosek ---
+  const nowyBox = el("div");
+  const nowy = przyciskIk("crm-btn crm-tecs-nowy crm-nowa-szansa", "nowaSzansa", "Nowy wniosek");
+  nowyBox.appendChild(nowy);
+  root().appendChild(nowyBox);
+  nowy.onclick = () => {
+    nowyBox.innerHTML = "";
+    formularzWniosku(nowyBox, ja, mojMail, karta, wnioski, pozostaly, () => void pokazHR(), () => {
+      nowyBox.innerHTML = "";
+      nowyBox.appendChild(nowy);
+    });
+  };
+
+  // --- filtry ---
+  const filtry = el("div", "crm-hr-filtry");
+  const poleF = (etykieta: string, typ: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = typ;
+    i.className = "crm-input";
+    k.appendChild(i);
+    filtry.appendChild(k);
+    return i;
+  };
+  const fOd = poleF("Data od", "date");
+  const fDo = poleF("Data do", "date");
+  const fRodzajBox = el("div");
+  fRodzajBox.appendChild(el("label", "crm-label", "Rodzaj"));
+  const fRodzaj = document.createElement("select");
+  fRodzaj.className = "crm-select";
+  ["", ...TYPY_WNIOSKOW.map((t) => t.typ)].forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t;
+    o.textContent = t || "wszystkie";
+    fRodzaj.appendChild(o);
+  });
+  fRodzajBox.appendChild(fRodzaj);
+  filtry.appendChild(fRodzajBox);
+  const wyczysc = el("button", "crm-btn crm-btn-cichy crm-hr-wyczysc", "Wyczyść") as HTMLButtonElement;
+  filtry.appendChild(wyczysc);
+  root().appendChild(filtry);
+  fOd.value = hrFiltr.od;
+  fDo.value = hrFiltr.do;
+  fRodzaj.value = hrFiltr.rodzaj;
+
+  const przel = el("div");
+  root().appendChild(przel);
+  const licznik = el("div", "crm-status");
+  root().appendChild(licznik);
+  const lista = el("div");
+  root().appendChild(lista);
+
+  const rysuj = () => {
+    hrFiltr = { od: fOd.value, do: fDo.value, rodzaj: fRodzaj.value };
+    przel.innerHTML = "";
+    segment(przel, ["Aktualne", "Archiwalne"], hrArchiwalne ? "Archiwalne" : "Aktualne", (v) => {
+      hrArchiwalne = v === "Archiwalne";
+      rysuj();
+    });
+    const dzis = new Date();
+    dzis.setHours(0, 0, 0, 0);
+    const fOdD = fOd.value ? dzienLokalny(fOd.value + "T12:00:00") : null;
+    const fDoD = fDo.value ? dzienLokalny(fDo.value + "T12:00:00") : null;
+    const czas = (v: string) => dzienLokalny(v)?.getTime() ?? 0;
+    const widoczne = wnioski
+      .filter((w) => {
+        const koniec = dzienLokalny(w.do);
+        const aktualny = !!koniec && koniec >= dzis;
+        if (hrArchiwalne === aktualny) return false;
+        if (fRodzaj.value && typWniosku(w) !== fRodzaj.value) return false;
+        if (fOdD && (dzienLokalny(w.do) ?? dzis) < fOdD) return false;
+        if (fDoD && (dzienLokalny(w.od) ?? dzis) > fDoD) return false;
+        return true;
+      })
+      // aktualne czyta sie "co dalej", archiwalne "co ostatnio"
+      .sort((a, b) => (hrArchiwalne ? czas(b.od) - czas(a.od) : czas(a.od) - czas(b.od)));
+
+    licznik.textContent = `${hrArchiwalne ? "Archiwalne" : "Aktualne"} wnioski — ${widoczne.length}`;
+    lista.innerHTML = "";
+    if (!widoczne.length) {
+      return pusto(lista, hrArchiwalne
+        ? "Brak archiwalnych wniosków."
+        : "Brak aktualnych wniosków – starsze znajdziesz w zakładce Archiwalne");
+    }
+    widoczne.forEach((w) => lista.appendChild(kartaWniosku(w, admin, () => void pokazHR())));
+  };
+  [fOd, fDo, fRodzaj].forEach((x) => (x.onchange = rysuj));
+  wyczysc.onclick = () => {
+    fOd.value = fDo.value = fRodzaj.value = "";
+    rysuj();
+  };
+  rysuj();
+}
+
+/** Wiersz wniosku: ikona typu, typ i rok, od -> do, dni, godziny, przelozony, kosz. */
+function kartaWniosku(w: Wniosek, admin: boolean, poUsunieciu: () => void, zPracownikiem = false): HTMLElement {
+  const typ = typWniosku(w);
+  const wyg = wygladTypu(typ);
+  const k = el("div", "crm-kafel crm-hr-wniosek");
+  k.style.borderLeftColor = wyg.kol;
+
+  const gora = el("div", "crm-hr-wniosek-gora");
+  const ik = el("span", "crm-hr-typ-ik");
+  ik.style.color = wyg.kol;
+  ik.style.background = wyg.tlo;
+  ik.appendChild(ikona(wyg.ik));
+  const opis = el("div", "crm-hr-wniosek-opis");
+  const od = dzienLokalny(w.od);
+  if (zPracownikiem) opis.appendChild(el("div", "crm-hr-wniosek-kto", w.pracownik || "(bez pracownika)"));
+  opis.append(
+    el("div", "crm-hr-wniosek-typ", `${typ}${od ? ` · ${od.getFullYear()}` : ""}`),
+    el("div", "crm-hr-wniosek-daty", `${dataWniosku(w.od)} → ${dataWniosku(w.do)}`)
+  );
+  gora.append(ik, opis, pastylka(dniOdmiana(w.dni), wyg.kol, wyg.tlo));
+  k.appendChild(gora);
+
+  const meta = [w.godziny ? `${w.godziny.toLocaleString("pl-PL")} h` : "", w.przelozony ? `Przełożony: ${w.przelozony}` : ""]
+    .filter(Boolean).join(" · ");
+  if (meta) k.appendChild(el("div", "crm-kafel-meta crm-hr-wniosek-meta", meta));
+
+  // kosz: administracja HR zawsze, pracownik - wlasny wniosek, ktory jeszcze sie nie zaczal
+  const dzis = new Date();
+  dzis.setHours(0, 0, 0, 0);
+  if (admin || (od && od >= dzis)) {
+    const kosz = el("button", "crm-zal-kosz crm-hr-kosz") as HTMLButtonElement;
+    kosz.title = "Usuń wniosek";
+    kosz.appendChild(ikona("kosz"));
+    gora.appendChild(kosz);
+    kosz.onclick = () => {
+      kosz.disabled = true;
+      const pyt = el("div", "crm-zal-potwierdz");
+      pyt.appendChild(el("span", undefined, `Usunąć wniosek ${typ} ${dataWniosku(w.od)} → ${dataWniosku(w.do)}?`));
+      const takBtn = el("button", "crm-btn crm-btn-ostrz", "Usuń") as HTMLButtonElement;
+      const nie = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+      pyt.append(takBtn, nie);
+      k.appendChild(pyt);
+      nie.onclick = () => {
+        pyt.remove();
+        kosz.disabled = false;
+      };
+      takBtn.onclick = async () => {
+        takBtn.disabled = nie.disabled = true;
+        try {
+          await deleteListItem(HR_LISTA_WNIOSKOW, w.id);
+          poUsunieciu();
+        } catch (e: any) {
+          pyt.remove();
+          kosz.disabled = false;
+          k.appendChild(el("div", "crm-komunikat crm-blad", e?.message ?? String(e)));
+        }
+      };
+    };
+  }
+  return k;
+}
+
+/** Nowy wniosek - rodzaj, daty, dni robocze (bez swiat), godziny x 8, podglad urlopu i ostrzezenia. */
+function formularzWniosku(
+  miejsce: HTMLElement,
+  pracownik: string,
+  mailPracownika: string,
+  karta: KartaPracownika | null,
+  istniejace: Wniosek[],
+  pozostaly: number,
+  poZapisie: () => void,
+  anuluj: () => void
+) {
+  const box = el("div", "crm-nowe crm-demo crm-hr-forma");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "kalendarz", "Nowy wniosek"));
+  box.appendChild(el("div", "crm-nowe-info", pracownik));
+
+  // --- rodzaj: piec kafli w kolorach typow ---
+  box.appendChild(el("label", "crm-label", "Rodzaj *"));
+  const rodzaje = el("div", "crm-chipy crm-hr-rodzaje");
+  box.appendChild(rodzaje);
+  let typ: TypWniosku | "" = "";
+  TYPY_WNIOSKOW.forEach((t) => {
+    const b = przyciskIk("crm-chip-wybor crm-hr-rodzaj", t.ik, t.typ);
+    b.style.setProperty("--kol", t.kol);
+    b.style.setProperty("--tlo", t.tlo);
+    b.onclick = () => {
+      typ = t.typ;
+      rodzaje.querySelectorAll(".crm-hr-rodzaj").forEach((x) => x.classList.remove("crm-chip-akt"));
+      b.classList.add("crm-chip-akt");
+      przelicz();
+    };
+    rodzaje.appendChild(b);
+  });
+
+  const daty = el("div", "crm-demo-okres");
+  box.appendChild(daty);
+  const kolumna = (rzad: HTMLElement, etykieta: string, typPola: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = typPola;
+    i.className = "crm-input";
+    if (typPola === "text") i.inputMode = "decimal";
+    k.appendChild(i);
+    rzad.appendChild(k);
+    return i;
+  };
+  const od = kolumna(daty, "Pierwszy dzień *", "date");
+  const doD = kolumna(daty, "Ostatni dzień *", "date");
+  od.value = dzisISO();
+  doD.value = dzisISO();
+  const liczby = el("div", "crm-demo-okres");
+  box.appendChild(liczby);
+  const dni = kolumna(liczby, "Liczba dni roboczych *", "text");
+  const godz = kolumna(liczby, "Godziny *", "text");
+  // wyliczenie to podpowiedz - po recznej zmianie juz go nie nadpisujemy
+  let dniReczne = false;
+  let godzReczne = false;
+
+  box.appendChild(el("div", "crm-hr-swieta",
+    "Soboty, niedziele i święta ustawowe są pomijane. Przed zapisem sprawdź liczbę dni roboczych i godzin " +
+    "(np. dzień wolny za święto w sobotę)."));
+  const podglad = el("div", "crm-hr-podglad");
+  box.appendChild(podglad);
+  const ostrzezenia = el("div", "crm-hr-ostrzezenia");
+  box.appendChild(ostrzezenia);
+  const stan = el("div", "crm-hr-stan");
+  box.appendChild(stan);
+
+  const zapisz = el("button", "crm-btn", "Zapisz wniosek") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  const num = (i: HTMLInputElement) => {
+    const v = Number(i.value.replace(/\s/g, "").replace(",", "."));
+    return i.value.trim() && Number.isFinite(v) ? v : NaN;
+  };
+  const dzien = (i: HTMLInputElement) => (i.value ? dzienLokalny(i.value + "T12:00:00") : null);
+
+  function przelicz() {
+    if (!dniReczne) dni.value = String(dniRoboczeHR(dzien(od), dzien(doD)));
+    if (!godzReczne) godz.value = Number.isFinite(num(dni)) ? String(num(dni) * 8) : "";
+    sprawdz();
+  }
+
+  function sprawdz(): boolean {
+    const dOd = dzien(od), dDo = dzien(doD);
+    const n = num(dni);
+    const odwrocone = !!dOd && !!dDo && dDo < dOd;
+    const ok = !!typ && !!dOd && !!dDo && !odwrocone && n > 0 && Number.isFinite(num(godz));
+
+    // podglad skutku - tylko urlop uszczupla pule
+    podglad.innerHTML = "";
+    if (typ === "Urlop" && Number.isFinite(n)) {
+      const po = pozostaly - n;
+      podglad.append(
+        el("span", undefined, `Pozostały urlop: ${dniOdmiana(pozostaly)}`),
+        el("span", "crm-hr-strzalka", "→"),
+        el("strong", po < 0 ? "crm-hr-minus" : undefined, `po tym wniosku: ${dniOdmiana(po)}`)
+      );
+    }
+
+    // ostrzezenia, nie blokady
+    ostrzezenia.innerHTML = "";
+    const ostrz = (t: string) => ostrzezenia.appendChild(el("div", "crm-hr-ostrz", t));
+    if (typ === "Urlop" && Number.isFinite(n) && n > pozostaly) {
+      ostrz(`Wniosek przekracza pozostały urlop o ${dniOdmiana(n - pozostaly)}.`);
+    }
+    if (dOd && dDo && !odwrocone) {
+      istniejace
+        .filter((w) => {
+          const a = dzienLokalny(w.od), b = dzienLokalny(w.do);
+          return !!a && !!b && a <= dDo && b >= dOd;
+        })
+        .slice(0, 3)
+        .forEach((w) => ostrz(`Nakłada się na wniosek ${typWniosku(w)} ${dataWniosku(w.od)} → ${dataWniosku(w.do)}.`));
+    }
+
+    zapisz.disabled = !ok;
+    if (odwrocone) {
+      stan.textContent = "Ostatni dzień nie może być wcześniejszy niż pierwszy.";
+      stan.className = "crm-hr-stan crm-hr-stan-blad";
+    } else {
+      stan.textContent = ok ? "Gotowe do zapisu" : "Uzupełnij rodzaj, daty i liczbę dni";
+      stan.className = ok ? "crm-hr-stan crm-hr-stan-ok" : "crm-hr-stan crm-hr-stan-brak";
+    }
+    return ok;
+  }
+
+  od.onchange = () => {
+    if (doD.value && doD.value < od.value) doD.value = od.value;
+    przelicz();
+  };
+  doD.onchange = przelicz;
+  dni.oninput = () => {
+    dniReczne = true;
+    przelicz();
+  };
+  godz.oninput = () => {
+    godzReczne = true;
+    sprawdz();
+  };
+  przelicz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz() || !typ) return;
+    zapisz.disabled = wstecz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      const pracownikId = karta?.pracownikId
+        ? Number(karta.pracownikId)
+        : mailPracownika ? await getSiteUserId(mailPracownika).catch(() => null) : null;
+      const pola: Record<string, unknown> = {
+        Pracownik1: pracownik,
+        Supervisor1: karta?.przelozony ?? "",
+        GUIDPracownika: karta?.guid ?? "",
+        PierwszyDzien: dzienSP(od.value),
+        OstatniDzien: dzienSP(doD.value),
+        LiczbaDni: num(dni),
+        Godziny: num(godz),
+        Rodzaj: typ,
+        // ten sam fakt w pieciu kolumnach i w Rodzaj - dziedzictwo Power Apps, wypelniamy wszystkie
+        Urlop: typ === "Urlop",
+        HO: typ === "HO",
+        Opieka: typ === "Opieka",
+        Okolicznosciowy: typ === "Okolicznościowy",
+      };
+      if (pracownikId !== null) pola.PracownikLookupId = pracownikId;
+      if (karta?.przelozonyId) pola.SupervisorLookupId = karta.przelozonyId;
+      for (let i = 0; ; i++) {
+        HR_POLE_L4.forEach((k) => delete pola[k]);
+        pola[HR_POLE_L4[i]] = typ === "L4";
+        try {
+          await createListItem(HR_LISTA_WNIOSKOW, pola);
+          break;
+        } catch (e: any) {
+          const nieznane = String(e?.message ?? "").includes(`'${HR_POLE_L4[i]}' is not recognized`);
+          if (!nieznane || i === HR_POLE_L4.length - 1) throw e;
+        }
+      }
+      poZapisie();
+    } catch (e: any) {
+      komunikat.textContent = `Nie zapisano: ${e?.message ?? e}`;
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = wstecz.disabled = false;
+    }
+  };
+}
+
+// ---------------------------------------------------------------- HR: wnioski pracownikow (administracja)
+
+let hrTryb: "moje" | "pracownicy" | "kartoteka" = "moje";
+let hrAdminFiltr = { pracownik: "", od: "", do: "", rodzaj: "" };
+
+/** Przelacznik dla administracji HR nad widokiem: wlasne wnioski albo wszystkich pracownikow. */
+function przelacznikHR() {
+  const box = el("div", "crm-hr-tryb");
+  root().insertBefore(box, root().firstChild);
+  const aktywna = hrTryb === "moje" ? "Moje wnioski" : hrTryb === "pracownicy" ? "Wnioski" : "Pracownicy";
+  segment(box, ["Moje wnioski", "Wnioski", "Pracownicy"], aktywna, (v) => {
+    if (v === "Moje wnioski") void pokazHR();
+    else if (v === "Wnioski") void pokazHRWnioskiPracownikow();
+    else void pokazHRPracownicy();
+  });
+}
+
+async function pokazHRWnioskiPracownikow() {
+  widok = "hr";
+  hrTryb = "pracownicy";
+  ustawNaglowek("HR — wnioski pracowników", "nav-hr");
+  const wywolanie = ++pokazHRLicznik;
+  root().innerHTML = "";
+
+  const mojMail = (await getMojMail().catch(() => "")).trim().toLowerCase();
+  if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+  if (!HR_ADMIN.includes(mojMail)) return pokazHR(); // lista adresow to tylko zaslona, ale bez niej nie pokazujemy
+  przelacznikHR();
+  const s = status("Wczytywanie wniosków wszystkich pracowników...");
+
+  let karty: KartaPracownika[] = [];
+  let wnioski: Wniosek[] = [];
+  try {
+    const [k, w] = await Promise.all([getCalaLista(HR_LISTA_PRACOWNIKOW), getCalaLista(HR_LISTA_WNIOSKOW)]);
+    karty = k.map(toKartaPracownika).filter((x) => x.nazwa);
+    wnioski = w.map(toWniosek);
+  } catch (e: any) {
+    if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+    s.textContent = `Błąd: ${e?.message ?? e}`;
+    s.classList.add("crm-error");
+    return;
+  }
+  if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+  s.remove();
+
+  const kartaWg = new Map(karty.map((k) => [k.nazwa, k]));
+  const pozostalyDla = (nazwa: string) =>
+    (kartaWg.get(nazwa)?.urlop ?? HR_DOMYSLNY_URLOP) - sumaDni(wnioski.filter((w) => w.pracownik === nazwa), "Urlop");
+
+  // --- wniosek za pracownika ---
+  const nowyBox = el("div");
+  const nowy = przyciskIk("crm-btn crm-tecs-nowy crm-nowa-szansa", "nowaSzansa", "Wniosek za pracownika");
+  nowyBox.appendChild(nowy);
+  root().appendChild(nowyBox);
+  const zamknijNowy = () => {
+    nowyBox.innerHTML = "";
+    nowyBox.appendChild(nowy);
+  };
+  nowy.onclick = () => {
+    nowyBox.innerHTML = "";
+    const ramka = el("div", "crm-nowe crm-hr-za");
+    nowyBox.appendChild(ramka);
+    ramka.appendChild(el("label", "crm-label", "Pracownik *"));
+    const kto = document.createElement("select");
+    kto.className = "crm-select";
+    const pusta = document.createElement("option");
+    pusta.value = "";
+    pusta.textContent = "— wybierz pracownika —";
+    kto.appendChild(pusta);
+    karty
+      .filter((k) => k.pracuje)
+      .sort((a, b) => a.nazwa.localeCompare(b.nazwa, "pl"))
+      .forEach((k) => {
+        const o = document.createElement("option");
+        o.value = k.nazwa;
+        o.textContent = k.nazwa;
+        kto.appendChild(o);
+      });
+    ramka.appendChild(kto);
+    const forma = el("div");
+    ramka.appendChild(forma);
+    const podpowiedz = el("div", "crm-nowe-info", "Wybierz pracownika z listy.");
+    forma.appendChild(podpowiedz);
+    const anuluj = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+    anuluj.onclick = zamknijNowy;
+    forma.appendChild(anuluj);
+    // formularz rysowany od nowa dla wybranego pracownika - jego pula urlopu i jego terminy
+    kto.onchange = () => {
+      forma.innerHTML = "";
+      const karta = kartaWg.get(kto.value);
+      if (!karta) {
+        forma.append(podpowiedz, anuluj);
+        return;
+      }
+      formularzWniosku(forma, karta.nazwa, "", karta, wnioski.filter((w) => w.pracownik === karta.nazwa),
+        pozostalyDla(karta.nazwa), () => void pokazHRWnioskiPracownikow(), zamknijNowy);
+    };
+  };
+
+  // --- filtry: pracownik, daty, rodzaj ---
+  const filtry = el("div", "crm-hr-filtry");
+  const fPracBox = el("div", "crm-hr-filtr-prac");
+  fPracBox.appendChild(el("label", "crm-label", "Pracownik"));
+  const fPrac = document.createElement("select");
+  fPrac.className = "crm-select";
+  const nazwy = [...new Set([...karty.filter((k) => k.pracuje).map((k) => k.nazwa), ...wnioski.map((w) => w.pracownik)])]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "pl"));
+  ["", ...nazwy].forEach((n) => {
+    const o = document.createElement("option");
+    o.value = n;
+    o.textContent = n || "wszyscy";
+    fPrac.appendChild(o);
+  });
+  fPracBox.appendChild(fPrac);
+  filtry.appendChild(fPracBox);
+  const poleF = (etykieta: string) => {
+    const k = el("div");
+    k.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "date";
+    i.className = "crm-input";
+    k.appendChild(i);
+    filtry.appendChild(k);
+    return i;
+  };
+  const fOd = poleF("Data od");
+  const fDo = poleF("Data do");
+  const fRodzajBox = el("div");
+  fRodzajBox.appendChild(el("label", "crm-label", "Rodzaj"));
+  const fRodzaj = document.createElement("select");
+  fRodzaj.className = "crm-select";
+  ["", ...TYPY_WNIOSKOW.map((t) => t.typ)].forEach((t) => {
+    const o = document.createElement("option");
+    o.value = t;
+    o.textContent = t || "wszystkie";
+    fRodzaj.appendChild(o);
+  });
+  fRodzajBox.appendChild(fRodzaj);
+  filtry.appendChild(fRodzajBox);
+  const wyczysc = el("button", "crm-btn crm-btn-cichy crm-hr-wyczysc", "Wyczyść") as HTMLButtonElement;
+  filtry.appendChild(wyczysc);
+  root().appendChild(filtry);
+  fPrac.value = nazwy.includes(hrAdminFiltr.pracownik) ? hrAdminFiltr.pracownik : "";
+  fOd.value = hrAdminFiltr.od;
+  fDo.value = hrAdminFiltr.do;
+  fRodzaj.value = hrAdminFiltr.rodzaj;
+
+  const przel = el("div");
+  root().appendChild(przel);
+  const pigulki = el("div", "crm-hr-pigulki");
+  root().appendChild(pigulki);
+  const licznik = el("div", "crm-status");
+  root().appendChild(licznik);
+  const lista = el("div");
+  root().appendChild(lista);
+
+  const rysuj = () => {
+    hrAdminFiltr = { pracownik: fPrac.value, od: fOd.value, do: fDo.value, rodzaj: fRodzaj.value };
+    przel.innerHTML = "";
+    segment(przel, ["Aktualne", "Archiwalne"], hrArchiwalne ? "Archiwalne" : "Aktualne", (v) => {
+      hrArchiwalne = v === "Archiwalne";
+      rysuj();
+    });
+    const dzis = new Date();
+    dzis.setHours(0, 0, 0, 0);
+    const fOdD = fOd.value ? dzienLokalny(fOd.value + "T12:00:00") : null;
+    const fDoD = fDo.value ? dzienLokalny(fDo.value + "T12:00:00") : null;
+    const czas = (v: string) => dzienLokalny(v)?.getTime() ?? 0;
+    const widoczne = wnioski
+      .filter((w) => {
+        const koniec = dzienLokalny(w.do);
+        const aktualny = !!koniec && koniec >= dzis;
+        if (hrArchiwalne === aktualny) return false;
+        if (fPrac.value && w.pracownik !== fPrac.value) return false;
+        if (fRodzaj.value && typWniosku(w) !== fRodzaj.value) return false;
+        if (fOdD && (dzienLokalny(w.do) ?? dzis) < fOdD) return false;
+        if (fDoD && (dzienLokalny(w.od) ?? dzis) > fDoD) return false;
+        return true;
+      })
+      .sort((a, b) => (hrArchiwalne ? czas(b.od) - czas(a.od) : czas(a.od) - czas(b.od)));
+
+    // przy wybranym pracowniku: suma widocznych i (dla urlopu) pozostala pula
+    pigulki.innerHTML = "";
+    if (fPrac.value) {
+      pigulki.appendChild(pastylka(`Suma: ${dniOdmiana(widoczne.reduce((a, w) => a + w.dni, 0))}`, "#374151", "#F3F4F6"));
+      if (fRodzaj.value === "Urlop") {
+        pigulki.appendChild(pastylka(`Pozostały urlop: ${dniOdmiana(pozostalyDla(fPrac.value))}`, "#0D9488", "#E0F5F3"));
+      }
+    }
+
+    licznik.textContent = `${hrArchiwalne ? "Archiwalne" : "Aktualne"} wnioski — ${widoczne.length}`;
+    lista.innerHTML = "";
+    if (!widoczne.length) {
+      return pusto(lista, hrArchiwalne ? "Brak archiwalnych wniosków." : "Brak aktualnych wniosków dla wybranych filtrów.");
+    }
+    widoczne.forEach((w) => lista.appendChild(kartaWniosku(w, true, () => void pokazHRWnioskiPracownikow(), true)));
+  };
+  [fPrac, fOd, fDo, fRodzaj].forEach((x) => (x.onchange = rysuj));
+  wyczysc.onclick = () => {
+    fPrac.value = fOd.value = fDo.value = fRodzaj.value = "";
+    rysuj();
+  };
+  rysuj();
+}
+
+// ---------------------------------------------------------------- HR: pracownicy (kartoteka HRMain, administracja)
+
+type SortPracownikow = "nazwa" | "przelozony" | "lekarz" | "bhp" | "umowa";
+const SORTY_PRACOWNIKOW: [SortPracownikow, string][] = [
+  ["nazwa", "Pracownik"],
+  ["przelozony", "Przełożony"],
+  ["lekarz", "Lekarz"],
+  ["bhp", "BHP"],
+  ["umowa", "Umowa"],
+];
+let hrSort: { pole: SortPracownikow; rosnaco: boolean } = { pole: "nazwa", rosnaco: true };
+let hrByli = false;
+let hrSzukaj = "";
+
+/** Termin kadrowy: czerwony i pogrubiony, gdy zostalo mniej niz 30 dni (albo po terminie). */
+function terminKadrowy(etykieta: string, data: string, staly = false): HTMLElement {
+  const w = el("span", "crm-hr-termin");
+  w.appendChild(el("span", "crm-hr-termin-lbl", etykieta));
+  if (staly) {
+    w.appendChild(el("span", "crm-hr-termin-val", "na stałe"));
+    return w;
+  }
+  const d = dniDo(data);
+  const v = el("span", "crm-hr-termin-val", data ? dataPL(data) : "—");
+  if (d !== null && d < 30) v.classList.add("crm-hr-termin-blisko");
+  if (d !== null) v.title = d < 0 ? `po terminie (${-d} dni)` : `za ${d} dni`;
+  w.appendChild(v);
+  return w;
+}
+
+async function pokazHRPracownicy() {
+  widok = "hr";
+  hrTryb = "kartoteka";
+  ustawNaglowek("HR — pracownicy", "nav-hr");
+  const wywolanie = ++pokazHRLicznik;
+  root().innerHTML = "";
+
+  const mojMail = (await getMojMail().catch(() => "")).trim().toLowerCase();
+  if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+  if (!HR_ADMIN.includes(mojMail)) return pokazHR();
+  przelacznikHR();
+  const s = status("Wczytywanie kartoteki...");
+
+  let karty: KartaPracownika[] = [];
+  let wnioski: Wniosek[] = [];
+  try {
+    const [k, w] = await Promise.all([getCalaLista(HR_LISTA_PRACOWNIKOW), getCalaLista(HR_LISTA_WNIOSKOW)]);
+    karty = k.map(toKartaPracownika);
+    wnioski = w.map(toWniosek);
+  } catch (e: any) {
+    if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+    s.textContent = `Błąd: ${e?.message ?? e}`;
+    s.classList.add("crm-error");
+    return;
+  }
+  if (wywolanie !== pokazHRLicznik || widok !== "hr") return;
+  s.remove();
+
+  // --- dodaj pracownika ---
+  const nowyBox = el("div");
+  const nowy = przyciskIk("crm-btn crm-tecs-nowy crm-nowa-szansa", "nowaSzansa", "Dodaj pracownika");
+  nowyBox.appendChild(nowy);
+  root().appendChild(nowyBox);
+  nowy.onclick = () => {
+    nowyBox.innerHTML = "";
+    void formularzPracownika(nowyBox, null, karty, () => void pokazHRPracownicy(), () => {
+      nowyBox.innerHTML = "";
+      nowyBox.appendChild(nowy);
+    });
+  };
+
+  // --- szukanie, pracuja / byli, sortowanie ---
+  const szukaj = document.createElement("input");
+  szukaj.type = "search";
+  szukaj.className = "crm-szukaj";
+  szukaj.placeholder = "szukaj pracownika, przełożonego, działu";
+  szukaj.value = hrSzukaj;
+  root().appendChild(szukaj);
+  const przel = el("div");
+  root().appendChild(przel);
+  const sorty = el("div", "crm-hr-sorty");
+  root().appendChild(sorty);
+  const licznik = el("div", "crm-status");
+  root().appendChild(licznik);
+  const lista = el("div");
+  root().appendChild(lista);
+
+  const rok = new Date().getFullYear();
+  const wnioskiWg = new Map<string, Wniosek[]>();
+  wnioski.forEach((w) => wnioskiWg.set(w.pracownik, [...(wnioskiWg.get(w.pracownik) ?? []), w]));
+
+  const rysuj = () => {
+    hrSzukaj = szukaj.value;
+    przel.innerHTML = "";
+    segment(przel, ["Pracują", "Byli pracownicy"], hrByli ? "Byli pracownicy" : "Pracują", (v) => {
+      hrByli = v === "Byli pracownicy";
+      rysuj();
+    });
+
+    // naglowki sortowania ze strzalka przy aktywnej kolumnie
+    sorty.innerHTML = "";
+    sorty.appendChild(el("span", "crm-hr-sorty-lbl", "Sortuj:"));
+    SORTY_PRACOWNIKOW.forEach(([pole, etykieta]) => {
+      const akt = hrSort.pole === pole;
+      const b = el("button", akt ? "crm-hr-sort crm-hr-sort-akt" : "crm-hr-sort",
+        `${etykieta}${akt ? (hrSort.rosnaco ? " ↑" : " ↓") : ""}`) as HTMLButtonElement;
+      b.onclick = () => {
+        hrSort = { pole, rosnaco: akt ? !hrSort.rosnaco : true };
+        rysuj();
+      };
+      sorty.appendChild(b);
+    });
+
+    const q = szukaj.value.trim().toLowerCase();
+    const klucz = (k: KartaPracownika): string | number => {
+      if (hrSort.pole === "nazwa") return k.nazwa.toLowerCase();
+      if (hrSort.pole === "przelozony") return k.przelozony.toLowerCase();
+      const v = hrSort.pole === "lekarz" ? k.lekarz : hrSort.pole === "bhp" ? k.bhp : k.stala ? "" : k.umowa;
+      const t = Date.parse(v);
+      // puste terminy zawsze na koncu
+      return isNaN(t) ? (hrSort.rosnaco ? Number.MAX_SAFE_INTEGER : -Number.MAX_SAFE_INTEGER) : t;
+    };
+    const widoczni = karty
+      .filter((k) => k.pracuje !== hrByli)
+      .filter((k) => !q || [k.nazwa, k.przelozony, k.dzial].some((x) => x.toLowerCase().includes(q)))
+      .sort((a, b) => {
+        const x = klucz(a), y = klucz(b);
+        const r = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "pl");
+        return hrSort.rosnaco ? r : -r;
+      });
+
+    licznik.textContent = `${hrByli ? "Byli pracownicy" : "Pracownicy"} — ${widoczni.length}`;
+    lista.innerHTML = "";
+    if (!widoczni.length) return pusto(lista, q ? `Nic nie pasuje do „${szukaj.value.trim()}”.` : "Brak pracowników.");
+
+    widoczni.forEach((k) => {
+      const wn = wnioskiWg.get(k.nazwa) ?? [];
+      const karta = el("div", "crm-kafel crm-hr-pracownik");
+      karta.style.borderLeftColor = k.pracuje ? "#16A34A" : "#9CA3AF";
+      karta.tabIndex = 0;
+      karta.title = "Kliknij, aby edytować kartotekę";
+
+      const gora = el("div", "crm-hr-wniosek-gora");
+      const opis = el("div", "crm-hr-wniosek-opis");
+      opis.append(
+        el("div", "crm-hr-wniosek-typ", k.nazwa || "(bez nazwiska)"),
+        el("div", "crm-hr-wniosek-daty", [`Przełożony: ${k.przelozony || "—"}`, k.dzial].filter(Boolean).join(" · "))
+      );
+      gora.appendChild(opis);
+      gora.appendChild(k.pracuje
+        ? pastylka("pracuje", "#16A34A", "#E6F6EE")
+        : pastylka(k.koniec ? `do ${dataPL(k.koniec)}` : "nie pracuje", "#6B7280", "#F3F4F6"));
+      karta.appendChild(gora);
+
+      // liczby za biezacy rok jako pastylki
+      const liczby = el("div", "crm-hr-pigulki crm-hr-liczby");
+      const pozostaly = k.urlop - sumaDni(wn, "Urlop", rok);
+      liczby.append(
+        pastylka(`urlop ${dniOdmiana(pozostaly)}`, "#0D9488", "#E0F5F3"),
+        pastylka(`HO ${sumaDni(wn, "HO", rok)}`, "#2F6FD6", "#E8F0FD"),
+        pastylka(`L4 ${sumaDni(wn, "L4", rok)}`, "#DC2626", "#FEE2E2"),
+        pastylka(`opieka ${sumaDni(wn, "Opieka", rok)}`, "#DB2777", "#FCE7F3")
+      );
+      karta.appendChild(liczby);
+
+      const terminy = el("div", "crm-hr-terminy");
+      terminy.append(terminKadrowy("Lekarz", k.lekarz), terminKadrowy("BHP", k.bhp), terminKadrowy("Umowa", k.umowa, k.stala));
+      karta.appendChild(terminy);
+
+      // klik w karte - edycja kartoteki w miejscu karty
+      const edytuj = () => {
+        const box = el("div");
+        karta.replaceWith(box);
+        void formularzPracownika(box, k, karty, () => void pokazHRPracownicy(), () => box.replaceWith(karta));
+      };
+      karta.onclick = edytuj;
+      karta.onkeydown = (e: KeyboardEvent) => {
+        if (e.key === "Enter") edytuj();
+      };
+      lista.appendChild(karta);
+    });
+  };
+
+  let timer: any;
+  szukaj.oninput = () => {
+    clearTimeout(timer);
+    timer = setTimeout(rysuj, 150);
+  };
+  rysuj();
+}
+
+/** Kartoteka pracownika w HRMain - nowa albo edycja. Osoby (pracownik, przelozony) z MEScoStaff. */
+async function formularzPracownika(
+  miejsce: HTMLElement,
+  k: KartaPracownika | null,
+  karty: KartaPracownika[],
+  poZapisie: () => void,
+  anuluj: () => void
+) {
+  const box = el("div", "crm-nowe crm-demo crm-hr-forma");
+  miejsce.appendChild(box);
+  box.appendChild(poleIk("crm-demo-tytul", "ludzie", k ? `Kartoteka: ${k.nazwa}` : "Nowy pracownik"));
+
+  let staff: Awaited<ReturnType<typeof getSerwisanci>> = [];
+  let dzialy: string[] = [];
+  try {
+    [staff, dzialy] = await Promise.all([
+      getSerwisanci().catch(() => [] as Awaited<ReturnType<typeof getSerwisanci>>),
+      getChoiceOptions(HR_LISTA_PRACOWNIKOW, "Dzial").catch(() => [] as string[]),
+    ]);
+  } catch {
+    // formularz zadziala tez bez podpowiedzi
+  }
+
+  // osoby: lista MEScoStaff jako podpowiedz, mozna wpisac recznie (wtedy bez pola Osoba)
+  const lista = document.createElement("datalist");
+  lista.id = `hr-osoby-${nowyGuid()}`;
+  [...new Set([...staff.map((x) => x.nazwa), ...karty.map((x) => x.nazwa)])]
+    .filter(Boolean).sort((a, b) => a.localeCompare(b, "pl"))
+    .forEach((n) => {
+      const o = document.createElement("option");
+      o.value = n;
+      lista.appendChild(o);
+    });
+  box.appendChild(lista);
+  const osoba = (etykieta: string, wartosc: string) => {
+    const i = poleFormularza(box, etykieta);
+    i.setAttribute("list", lista.id);
+    i.value = wartosc;
+    return i;
+  };
+  const pracownik = osoba("Pracownik *", k?.nazwa ?? "");
+  const przelozony = osoba("Przełożony", k?.przelozony ?? "");
+
+  box.appendChild(el("label", "crm-label", "Dział"));
+  const dzial = document.createElement("select");
+  dzial.className = "crm-select";
+  ["", ...dzialy].forEach((d) => {
+    const o = document.createElement("option");
+    o.value = d;
+    o.textContent = d || "—";
+    dzial.appendChild(o);
+  });
+  if (k?.dzial && !dzialy.includes(k.dzial)) {
+    const o = document.createElement("option");
+    o.value = o.textContent = k.dzial;
+    dzial.appendChild(o);
+  }
+  dzial.value = k?.dzial ?? "";
+  box.appendChild(dzial);
+
+  const urlop = poleFormularza(box, "Wymiar urlopu (dni na rok)");
+  urlop.inputMode = "numeric";
+  urlop.value = String(k?.urlop ?? HR_DOMYSLNY_URLOP);
+
+  const dzien = (v: string) => {
+    const d = dzienLokalny(v);
+    return d ? isoDnia(d) : "";
+  };
+  const terminy = el("div", "crm-demo-okres");
+  box.appendChild(terminy);
+  const kolD = (etykieta: string, wartosc: string) => {
+    const kk = el("div");
+    kk.appendChild(el("label", "crm-label", etykieta));
+    const i = document.createElement("input");
+    i.type = "date";
+    i.className = "crm-input";
+    i.value = dzien(wartosc);
+    kk.appendChild(i);
+    terminy.appendChild(kk);
+    return i;
+  };
+  const bhp = kolD("BHP ważne do", k?.bhp ?? "");
+  const lekarz = kolD("Badania lekarskie do", k?.lekarz ?? "");
+
+  const przelacznik = (etykieta: string, zaznaczony: boolean) => {
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.id = `hr-${nowyGuid()}`;
+    c.checked = zaznaczony;
+    const lbl = el("label", "crm-check") as HTMLLabelElement;
+    lbl.htmlFor = c.id;
+    lbl.append(c, el("span", undefined, etykieta));
+    box.appendChild(lbl);
+    return c;
+  };
+  const stala = przelacznik("Umowa na czas nieokreślony", k?.stala ?? false);
+  const umowaBox = el("div");
+  box.appendChild(umowaBox);
+  const umowa = poleFormularza(umowaBox, "Umowa czasowa do", "date");
+  umowa.value = dzien(k?.umowa ?? "");
+  const odswiezUmowe = () => (umowaBox.hidden = stala.checked);
+  stala.onchange = odswiezUmowe;
+  odswiezUmowe();
+
+  // Status = true znaczy "nie pracuje" - wtedy data konca pracy
+  const nie = przelacznik("Nie pracuje już w firmie", k ? !k.pracuje : false);
+  const koniecBox = el("div");
+  box.appendChild(koniecBox);
+  const koniec = poleFormularza(koniecBox, "Dzień zakończenia pracy", "date");
+  koniec.value = dzien(k?.koniec ?? "");
+  const odswiezKoniec = () => (koniecBox.hidden = !nie.checked);
+  nie.onchange = odswiezKoniec;
+  odswiezKoniec();
+
+  const brakujace = el("div", "crm-podpowiedz");
+  box.appendChild(brakujace);
+  const zapisz = el("button", "crm-btn", k ? "Zapisz zmiany" : "Dodaj pracownika") as HTMLButtonElement;
+  const wstecz = el("button", "crm-btn crm-btn-cichy", "Anuluj") as HTMLButtonElement;
+  const komunikat = el("span", "crm-komunikat");
+  const rzad = el("div", "crm-akcje");
+  rzad.append(zapisz, wstecz, komunikat);
+  box.appendChild(rzad);
+  wstecz.onclick = anuluj;
+
+  const sprawdz = () => {
+    const brak: string[] = [];
+    if (!pracownik.value.trim()) brak.push("pracownik");
+    if (!k && karty.some((x) => x.nazwa.trim().toLowerCase() === pracownik.value.trim().toLowerCase())) {
+      brak.push("pracownik jest już w kartotece");
+    }
+    const ok = brak.length === 0;
+    zapisz.disabled = !ok;
+    brakujace.textContent = ok ? "" : `Uzupełnij: ${brak.join(", ")}.`;
+    brakujace.style.display = ok ? "none" : "block";
+    return ok;
+  };
+  pracownik.oninput = sprawdz;
+  sprawdz();
+
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = wstecz.disabled = true;
+    komunikat.textContent = "Zapisywanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      // pole Osoba: Id uzytkownika witryny z MEScoStaff; niezmieniona osoba zostaje jak byla
+      const idOsoby = async (nazwa: string, stara: string, stareId: string) => {
+        if (k && nazwa === stara) return stareId ? Number(stareId) : null;
+        const z = staff.find((x) => x.nazwa === nazwa);
+        if (!z) return null;
+        return z.siteId ?? (await getSiteUserId(z.mail).catch(() => null));
+      };
+      const nazwa = pracownik.value.trim();
+      const przel = przelozony.value.trim();
+      const pola: Record<string, unknown> = {
+        Pracownik1: nazwa,
+        Supervisor1: przel,
+        IleUrlopu: Number(urlop.value) || HR_DOMYSLNY_URLOP,
+        BHP: dzienSP(bhp.value),
+        Lekarz: dzienSP(lekarz.value),
+        StalaUmowa: stala.checked,
+        Umowa: stala.checked ? null : dzienSP(umowa.value),
+        Status: nie.checked,
+        DataKoncaPracy: nie.checked ? dzienSP(koniec.value) : null,
+      };
+      if (dzial.value || k?.dzial) pola.Dzial = dzial.value || null;
+      const idP = await idOsoby(nazwa, k?.nazwa ?? "", k?.pracownikId ?? "");
+      if (idP !== null) pola.PracownikLookupId = idP;
+      const idS = await idOsoby(przel, k?.przelozony ?? "", k?.przelozonyId ?? "");
+      if (idS !== null) pola.SupervisorLookupId = idS;
+      else if (!przel) pola.SupervisorLookupId = null;
+
+      if (k) await updateTicketFields(k.id, pola, k.etag || undefined, HR_LISTA_PRACOWNIKOW);
+      else await createListItem(HR_LISTA_PRACOWNIKOW, { ...pola, ContactGUID: nowyGuid() });
+      poZapisie();
+    } catch (e: any) {
+      komunikat.textContent = `Nie zapisano: ${e?.message ?? e}`;
+      komunikat.className = "crm-komunikat crm-blad";
+      zapisz.disabled = wstecz.disabled = false;
+    }
+  };
+}
+
 // ---------------------------------------------------------------- odswiezanie
 
 async function odswiez() {
@@ -7551,5 +9063,10 @@ async function odswiez() {
     return pokazFirma(ostatniaFirma);
   }
   if (widok === "szanse") return pokazSzanse();
+  if (widok === "hr") {
+    return hrTryb === "pracownicy" ? pokazHRWnioskiPracownikow()
+      : hrTryb === "kartoteka" ? pokazHRPracownicy()
+      : pokazHR();
+  }
   return pokazZgloszenia();
 }

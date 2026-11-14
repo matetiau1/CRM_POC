@@ -2635,3 +2635,234 @@ button { -webkit-tap-highlight-color: transparent; }
   overflow-wrap: anywhere;
   color: var(--crm-tekst);
 }
+
+/* ---------- dymek po zalozeniu zgloszenia (Teams) - 15 s, potem w prawo ---------- */
+.crm-dymek-teams {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-brand-tlo);
+  border: 1px solid var(--crm-brand-linia);
+  color: var(--crm-tekst);
+  font-size: var(--crm-t-mini);
+  line-height: 1.4;
+  transition: transform 420ms cubic-bezier(.4, 0, .2, 1), opacity 420ms ease;
+}
+.crm-dymek-teams .crm-ikona { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--crm-brand); }
+.crm-dymek-teams.crm-dymek-wyjdz { transform: translateX(110%); opacity: 0; }
+.crm-nowe:has(.crm-dymek-teams) { overflow: hidden; }
+
+/* zamkniete zgloszenie w watku: otworz / nowy numer */
+.crm-watek-zamk .crm-btn { display: inline-flex; align-items: center; gap: 5px; }
+.crm-watek-zamk .crm-ikona { width: 13px; height: 13px; }
+
+/* ---------- pasek klienta nad dolnym menu (widok Support) ---------- */
+.crm-pasek-klienta {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 19;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--crm-szklo, rgba(255, 255, 255, .92));
+  -webkit-backdrop-filter: var(--crm-szklo-filtr, none);
+  backdrop-filter: var(--crm-szklo-filtr, none);
+  border-top: 1px solid var(--crm-linia);
+}
+.crm-pasek-klienta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--crm-h-przycisk, 30px);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-wypelnienie, #EEF0F3);
+  color: var(--crm-brand);
+  font-family: inherit;
+  font-size: var(--crm-t-mini);
+  font-weight: 600;
+  cursor: pointer;
+}
+.crm-pasek-klienta-btn:hover { background: var(--crm-brand-tlo); }
+.crm-pasek-klienta-btn .crm-ikona { flex: none; width: 14px; height: 14px; }
+.crm-pasek-klienta-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#app-body #item-subject.crm-z-paskiem-klienta { padding-bottom: 122px; }
+
+/* filtr jednej osoby w zakladce Szkolenia */
+.crm-szk-filtr { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.crm-szk-filtr-txt { flex: 1; min-width: 0; font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-brand); }
+
+/* dolne menu: tyle kolumn, ile widocznych przyciskow (5 albo 6 z HR) */
+.crm-dol, .crm-dol.crm-dol-5 {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+/* ---------- HR: wnioski urlopowe ---------- */
+
+.crm-hr-glowa {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: var(--crm-r-m);
+  background: var(--crm-tlo);
+  box-shadow: var(--crm-cien-1);
+}
+.crm-hr-glowa-ik {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-brand-tlo);
+  color: var(--crm-brand);
+}
+.crm-hr-glowa-ik .crm-ikona { width: 20px; height: 20px; }
+.crm-hr-glowa-kto { min-width: 0; }
+.crm-hr-glowa-nazwa { font-size: var(--crm-t-baza); font-weight: 600; color: var(--crm-tekst); }
+.crm-hr-glowa-sub { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+
+/* kafle 1 + 2 + 2: pozostaly urlop na cala szerokosc */
+.crm-hr-kafle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.crm-hr-kafel { padding: 8px 10px; border-radius: var(--crm-r-s); background: var(--crm-tlo); box-shadow: var(--crm-cien-1); }
+.crm-hr-kafel-glowny { grid-column: 1 / -1; }
+.crm-hr-kafel-lbl { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-hr-kafel-val { font-size: var(--crm-t-duzy); font-weight: 700; }
+.crm-hr-kafel-glowny .crm-hr-kafel-val { font-size: 22px; }
+
+.crm-hr-filtry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 6px; margin: 8px 0 4px; }
+.crm-hr-filtry .crm-input, .crm-hr-filtry .crm-select { width: 100%; min-width: 0; }
+.crm-hr-wyczysc { grid-column: 1 / -1; justify-self: start; margin-bottom: 6px; }
+
+.crm-hr-wniosek-gora { display: flex; align-items: center; gap: 10px; }
+.crm-hr-typ-ik { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--crm-r-s); }
+.crm-hr-typ-ik .crm-ikona { width: 18px; height: 18px; }
+.crm-hr-wniosek-opis { flex: 1; min-width: 0; }
+.crm-hr-wniosek-typ { font-size: var(--crm-t-maly); font-weight: 600; color: var(--crm-tekst); }
+.crm-hr-wniosek-daty { font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+.crm-hr-wniosek-meta { margin: 4px 0 0 42px; }
+.crm-hr-kosz { flex: none; }
+
+/* formularz: kafle rodzaju w kolorach typow */
+.crm-hr-rodzaje { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.crm-hr-rodzaj { display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--kol); }
+.crm-hr-rodzaj .crm-ikona { width: 15px; height: 15px; }
+.crm-hr-rodzaj.crm-chip-akt,
+.crm-hr-rodzaj.crm-chip-akt:hover { background: var(--tlo); border: 2px solid var(--kol); color: var(--kol); font-weight: 600; }
+.crm-hr-rodzaj:last-child { grid-column: 1 / -1; }
+
+.crm-hr-swieta {
+  margin: 6px 0;
+  padding: 7px 9px;
+  border-radius: var(--crm-r-s);
+  background: var(--crm-c-uwaga-tlo);
+  color: var(--crm-c-uwaga);
+  font-size: var(--crm-t-mini);
+}
+.crm-hr-podglad { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+.crm-hr-podglad:empty { display: none; }
+.crm-hr-podglad strong { color: #0D9488; }
+.crm-hr-podglad strong.crm-hr-minus { color: #DC2626; }
+.crm-hr-strzalka { color: var(--crm-tekst-3); }
+.crm-hr-ostrz { margin-top: 4px; font-size: var(--crm-t-mini); color: #D97706; }
+.crm-hr-ostrz::before { content: "⚠ "; }
+.crm-hr-stan { margin: 6px 0 2px; font-size: var(--crm-t-mini); font-weight: 600; }
+.crm-hr-stan-ok { color: #16A34A; }
+.crm-hr-stan-brak { color: #D97706; }
+.crm-hr-stan-blad { color: #DC2626; }
+
+/* HR - administracja: przelacznik, filtr pracownika, pastylki sumy */
+.crm-hr-tryb { margin: 2px 0 8px; }
+.crm-hr-filtr-prac { grid-column: 1 / -1; }
+.crm-hr-pigulki { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.crm-hr-pigulki:empty { display: none; }
+.crm-hr-pigulki .crm-pill { font-size: var(--crm-t-mini); padding: 3px 10px; font-weight: 600; }
+.crm-hr-wniosek-kto { font-size: var(--crm-t-mini); font-weight: 600; color: var(--crm-brand); }
+.crm-hr-za > .crm-select { margin-bottom: 6px; }
+
+/* HR - kartoteka pracownikow */
+.crm-hr-sorty { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0 6px; }
+.crm-hr-sorty-lbl { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); margin-right: 2px; }
+.crm-hr-sort {
+  padding: 3px 8px;
+  border: 1px solid var(--crm-linia);
+  border-radius: var(--crm-r-pill);
+  background: var(--crm-tlo);
+  font-family: inherit;
+  font-size: var(--crm-t-mikro);
+  color: var(--crm-tekst-2);
+  cursor: pointer;
+}
+.crm-hr-sort:hover { border-color: var(--crm-brand-linia); color: var(--crm-brand); }
+.crm-hr-sort-akt { background: var(--crm-brand-tlo); border-color: var(--crm-brand); color: var(--crm-brand); font-weight: 600; }
+.crm-hr-pracownik { cursor: pointer; }
+.crm-hr-pracownik:hover { box-shadow: var(--crm-cien-2); }
+.crm-hr-liczby { margin: 6px 0 4px; }
+.crm-hr-liczby .crm-pill { font-size: var(--crm-t-mikro); padding: 2px 8px; font-weight: 500; }
+.crm-hr-terminy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.crm-hr-termin { display: flex; flex-direction: column; min-width: 0; padding: 4px 6px; border-radius: var(--crm-r-xs); background: var(--crm-tlo-2); }
+.crm-hr-termin-lbl { font-size: var(--crm-t-mikro); color: var(--crm-tekst-3); }
+.crm-hr-termin-val { font-size: var(--crm-t-mini); color: var(--crm-tekst); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crm-hr-termin-blisko { color: #DC2626; font-weight: 700; }
+
+/* ---------- PROBA: gorny pasek w gradiencie tla z Power Apps ----------
+   Tylko naglowek - na calym tle tresc sie zlewala. Do wycofania: usunac ten blok. */
+.crm-nav {
+  background: linear-gradient(135deg, rgb(65, 147, 64), rgb(40, 110, 255));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom: 0;
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(20, 60, 120, .18);
+}
+.crm-nav-btn { background: rgba(255, 255, 255, .18); color: #fff; }
+.crm-nav-btn:hover { background: rgba(255, 255, 255, .30); }
+
+/* ---------- reczne zgloszenie z kontaktu (SupportNewForm) ---------- */
+.crm-su-ik { background: #FEF3E2; color: #D97706; }
+.crm-su-kafle { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0 4px; }
+.crm-su-kafel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "lbl lbl" "cb stan";
+  align-items: center;
+  gap: 4px 8px;
+  padding: 7px 9px;
+  border-radius: var(--crm-r-s);
+  background: #F8F9FB;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.crm-su-lbl { grid-area: lbl; font-size: var(--crm-t-mikro); font-weight: 600; color: #374151; }
+.crm-su-cb { grid-area: cb; margin: 0; width: 16px; height: 16px; accent-color: #5B6CDB; }
+.crm-su-stan { grid-area: stan; font-size: var(--crm-t-mini); color: var(--crm-tekst-2); }
+.crm-su-kafel.crm-su-wl { background: #EEF0FC; border-color: #A5B0F0; }
+.crm-su-kafel.crm-su-wl .crm-su-stan { color: #5B6CDB; font-weight: 600; }
+.crm-su-info { margin: 6px 0 2px; font-size: var(--crm-t-mini); font-weight: 600; }
+.crm-su-info-ok { color: #16A34A; }
+.crm-su-info-brak { color: #D97706; }
+
+/* karta kontaktu: ikony akcji bez kolorowych otoczek - zostaje sam kolor ikony */
+.crm-kk-akcje .crm-kk-akcja,
+.crm-kk-akcje .crm-kk-niebieski,
+.crm-kk-akcje .crm-kk-pomaranczowy,
+.crm-kk-akcje .crm-kk-zolty,
+.crm-kk-akcje .crm-kk-czerwony,
+.crm-kk-dzwon { background: transparent; }
+.crm-kk-akcje .crm-kk-akcja:hover:not(:disabled),
+.crm-kk-dzwon:hover,
+.crm-kk-akcja:hover:not(:disabled) { background: transparent; filter: none; opacity: .7; }
+/* ikona, ktorej formularz jest otwarty pod karta kontaktu */
+.crm-kk-akcje .crm-kk-akcja.crm-kk-otwarte { background: var(--crm-tlo-3); opacity: 1; }
