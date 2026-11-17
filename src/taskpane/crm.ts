@@ -74,8 +74,9 @@ export const KOLOR_STATUSU: Record<string, string> = {
 
 /** Opis statusu na etykietach; w SharePoint zostaja oryginalne wartosci StatusTicket. */
 export const ETYKIETA_STATUSU: Record<string, string> = {
-  "Oczekuje na odpowiedź": "Do odpowiedzi",
-  "W toku": "Czeka na klienta",
+  // ping-pong: "Oczekuje na odpowiedź" = odpisalismy, czekamy na klienta; "W toku" = klient odpisal, ruch nasz
+  "Oczekuje na odpowiedź": "Czeka na klienta",
+  "W toku": "Do odpowiedzi",
 };
 export const etykietaStatusu = (s: string) => ETYKIETA_STATUSU[s] ?? s;
 
