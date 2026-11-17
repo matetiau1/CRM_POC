@@ -2,7 +2,7 @@
 import { ListItem } from "./graphService";
 
 export type TicketStatus =
-  "Przydzielony" | "W toku" | "Oczekuje na odpowiedź" | "Rozwiązany" | "Zamknięty" | "";
+  "Przydzielony" | "W toku" | "Oczekuje na odpowiedź" | "Zamknięty" | "";
 
 export type Ticket = {
   id: string;            // id elementu listy (do edycji)
@@ -69,9 +69,15 @@ export const KOLOR_STATUSU: Record<string, string> = {
   "Przydzielony": "#DC2626",
   "W toku": "#F59E0B",
   "Oczekuje na odpowiedź": "#10B981",
-  "Rozwiązany": "#2563EB",
   "Zamknięty": "#6B7280",
 };
+
+/** Opis statusu na etykietach; w SharePoint zostaja oryginalne wartosci StatusTicket. */
+export const ETYKIETA_STATUSU: Record<string, string> = {
+  "Oczekuje na odpowiedź": "Do odpowiedzi",
+  "W toku": "Czeka na klienta",
+};
+export const etykietaStatusu = (s: string) => ETYKIETA_STATUSU[s] ?? s;
 
 /** Numer zgloszenia z tematu wiadomosci: [MESco-ID-14487] */
 export function ticketIdZTematu(subject: string): number | null {

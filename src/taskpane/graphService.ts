@@ -384,9 +384,13 @@ export type FlowWynik = { ticketId: number; temat: string; status: number; tresc
 export async function runTicketFlow(p: FlowParams, token?: string): Promise<FlowWynik> {
   const t = token ?? (await getFlowToken());
   let res: Response;
+  // przeplyw odpowiada dopiero na koncu (Teams, maile, Delay) - dajemy mu do 3 minut
+  const stoper = new AbortController();
+  const limit = setTimeout(() => stoper.abort(), 180000);
   try {
     res = await fetch(FLOW_URL, {
       method: "POST",
+      signal: stoper.signal,
       headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         text: p.recordId,
@@ -398,11 +402,23 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
       }),
     });
   } catch (e: any) {
+    clearTimeout(limit);
+    if (stoper.signal.aborted) throw new Error("Przepływ nie odpowiedział w ciągu 3 minut");
     // przegladarka nie mowi wprost o CORS - fetch konczy sie samym TypeError
     throw new Error(`Brak odpowiedzi przepływu (sieć lub CORS): ${e?.message ?? e}`);
   }
+  clearTimeout(limit);
   const tresc = await res.text();
-  if (!res.ok) throw new Error(`Przepływ odrzucił wywołanie (${res.status}): ${tresc.slice(0, 300)}`);
+  // 504: Power Automate trzyma polaczenie max ok. 2 min - przeplyw dalej dziala, numer mogl zostac nadany
+  if (res.status === 504) {
+    throw new Error("Przepływ nie odpowiedział w limicie 2 minut (504). Zgłoszenie mogło zostać założone — odśwież listę przed ponowną próbą.");
+  }
+  if (!res.ok) {
+    // Response bledu z przeplywu: { status: "error", message: "..." }
+    let msg = "";
+    try { msg = String(JSON.parse(tresc)?.message ?? ""); } catch { /* nie JSON */ }
+    throw new Error(msg ? `Przepływ: ${msg} (${res.status})` : `Przepływ odrzucił wywołanie (${res.status}): ${tresc.slice(0, 300)}`);
+  }
   // 202 = przeplyw przyjal, ale Response nie wrocil
   if (res.status === 202) throw new Error("Przepływ przyjął zgłoszenie (202), ale nie zwrócił numeru");
   let dane: any = {};
@@ -411,7 +427,16 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
   } catch {
     throw new Error(`Przepływ zwrócił ${res.status}, ale nie JSON: ${tresc.slice(0, 200)}`);
   }
-  return { ticketId: Number(dane.ticketId), temat: String(dane.temat ?? ""), status: res.status, tresc };
+  // odpowiedz z konca przeplywu: { status: "ok", ticketId, temat }
+  const ticketId = Number(dane.ticketId);
+  // brak pola status traktujemy jak ok - liczy sie numer
+  if (dane.status != null && String(dane.status).toLowerCase() !== "ok") {
+    throw new Error(`Przepływ zwrócił status "${dane.status ?? "brak"}": ${tresc.slice(0, 200)}`);
+  }
+  if (!Number.isInteger(ticketId) || ticketId <= 0) {
+    throw new Error(`Przepływ nie zwrócił numeru zgłoszenia: ${tresc.slice(0, 200)}`);
+  }
+  return { ticketId, temat: String(dane.temat ?? ""), status: res.status, tresc };
 }
 
 /** Wszystkie elementy listy (strony po 999) - do list bez filtra, np. wnioski HR dla administracji. */
@@ -1317,6 +1342,33 @@ export async function getByCompany(
   return res.value;
 }
  
+/** Wszystkie elementy firmy (strony po 500, najwyzej 20 stron) - gdy limit jednego zapytania nie wystarcza, np. notatki. */
+export async function getByCompanyWszystkie(
+  listName: string,
+  guid: string,
+  pole = "IdentyfikatorCompanies"
+): Promise<ListItem[]> {
+  const token = await getToken();
+  const siteId = await getSiteId(token);
+  const listId = await getListId(siteId, listName, token);
+  const safe = guid.trim().replace(/'/g, "''");
+  const zebrane: ListItem[] = [];
+  let url: string | null =
+    `${GRAPH}/sites/${siteId}/lists/${listId}/items?expand=fields&$top=500&$filter=fields/${pole} eq '${safe}'`;
+  let strony = 0;
+  while (url && strony < 20) {
+    const r: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly" },
+    });
+    if (!r.ok) throw new Error(`Graph ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    const dane: { value: ListItem[]; "@odata.nextLink"?: string } = await r.json();
+    zebrane.push(...dane.value);
+    url = dane["@odata.nextLink"] ?? null;
+    strony++;
+  }
+  return zebrane;
+}
+
 /** Pelny rekord firmy po CompaniesGUID. */
 export async function getCompanyByGuid(guid: string): Promise<ListItem | null> {
   const items = await getByCompany("Companies", guid, { pole: "CompaniesGUID", top: 1 });

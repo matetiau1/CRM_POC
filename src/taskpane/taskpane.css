@@ -2866,3 +2866,16 @@ button { -webkit-tap-highlight-color: transparent; }
 .crm-kk-akcja:hover:not(:disabled) { background: transparent; filter: none; opacity: .7; }
 /* ikona, ktorej formularz jest otwarty pod karta kontaktu */
 .crm-kk-akcje .crm-kk-akcja.crm-kk-otwarte { background: var(--crm-tlo-3); opacity: 1; }
+
+/* wynik zakladania zgloszenia przez przeplyw HTTP - zostaje, az do ponownej proby */
+.crm-wynik-zgl .crm-wynik-tytul { font-weight: 600; margin-bottom: 2px; }
+.crm-wynik-zgl.crm-wynik-ok { background: #E8F5E9; border-color: #A5D6A7; }
+.crm-wynik-zgl.crm-wynik-ok .crm-ikona { color: #2E7D32; }
+.crm-wynik-zgl.crm-wynik-blad { background: #FDECEA; border-color: #F5B7B1; }
+.crm-wynik-zgl.crm-wynik-blad .crm-ikona { color: #C62828; }
+
+/* Support: szybki przycisk "Moje zgloszenia" */
+.crm-filtry > .crm-moje-zgl { flex: 1 1 100%; }
+.crm-moje-zgl { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; }
+.crm-moje-zgl .crm-ikona { width: 14px; height: 14px; }
+.crm-moje-zgl.crm-moje-aktywne { background: var(--crm-brand-tlo); border-color: var(--crm-brand-linia); color: var(--crm-brand); }

@@ -5,11 +5,11 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getCalaLista, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
+  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getCalaLista, getByCompanyWszystkie, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
 } from "./graphService";
 import type { ListItem, PozycjaCennika, CenaTecs, ProgRabatu } from "./graphService";
 import {
-  toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, ticketIdZTematu, Ticket, Company,
+  toTicket, toCompany, formatData, dniOdZmiany, KOLOR_STATUSU, etykietaStatusu, ticketIdZTematu, Ticket, Company,
   toContact, Contact, toCompanyFull, CompanyFull, toNota, Nota, toTecs, toSzansa, Szansa,
   toLicencjaTecs, toLicencjaBez, Licencja, toSzkolenie, dniDo, kolorTerminu,
   ETAP_KOLORY, ETAP_SKROTY, rozbijNazwe, plecZImienia, nowyGuid, TecsRow, toProduktTecs, ProduktTecs, toProduktSzansy, ProduktSzansy,
@@ -562,11 +562,16 @@ function karta(t: Ticket): HTMLElement {
   };
   ustawLock();
   foot.appendChild(lock);
-  if (t.status) {
-    const chip = el("span", "crm-chip", t.status);
-    chip.style.background = kolor;
-    foot.appendChild(chip);
-  }
+  // etykieta statusu - odswiezana na miejscu po zapisie (bez przeladowania listy)
+  const chip = el("span", "crm-chip");
+  const ustawChip = () => {
+    chip.hidden = !t.status;
+    chip.textContent = etykietaStatusu(t.status);
+    chip.title = t.status; // pelna wartosc z SharePoint po najechaniu
+    chip.style.background = KOLOR_STATUSU[t.status] ?? kolor;
+  };
+  ustawChip();
+  foot.appendChild(chip);
   head.appendChild(foot);
 
   const dni = dniOdZmiany(t.modified);
@@ -577,6 +582,8 @@ function karta(t: Ticket): HTMLElement {
   const odswiezNaglowek = () => {
     czasEtykieta.textContent = t.czas ? `${t.czas} h` : "—";
     ustawLock();
+    ustawChip();
+    card.style.borderLeftColor = KOLOR_STATUSU[t.status] ?? kolor;
   };
 
   const detale = szczegoly(t, odswiezNaglowek);
@@ -666,14 +673,15 @@ function szczegoly(t: Ticket, poZapisie: () => void): HTMLElement {
   ostrzezenie.style.display = "none";
   box.appendChild(ostrzezenie);
 
-  // usuwanie - tylko wlasciciel zgloszenia (obslugujacy, MailCreator), z potwierdzeniem
+  // usuwanie - wlasciciel zgloszenia (obslugujacy, MailCreator) albo administrator (kazde), z potwierdzeniem
   const usun = przyciskIk("crm-btn crm-btn-cichy crm-zgl-usun", "kosz", "Usuń");
   usun.title = "Usuń zgłoszenie";
   usun.hidden = true;
   pasek.insertBefore(usun, komunikat);
-  if (t.opiekunMail) {
-    void getMojMail().then((m) => (usun.hidden = m.trim().toLowerCase() !== t.opiekunMail), () => undefined);
-  }
+  void getMojMail().then((m) => {
+    const ja = m.trim().toLowerCase();
+    usun.hidden = !(ja === ADMIN_KONTAKTOW || (!!t.opiekunMail && ja === t.opiekunMail));
+  }, () => undefined);
   usun.onclick = () => {
     ostrzezenie.innerHTML = "";
     ostrzezenie.appendChild(el("div", undefined,
@@ -727,14 +735,17 @@ function szczegoly(t: Ticket, poZapisie: () => void): HTMLElement {
       // data zamkniecia: ustawiamy przy zamykaniu, czyscimy przy ponownym otwarciu
       if (zamkniete.checked && !t.zamkniete) {
         pola["Datazako_x0144_czenia"] = new Date().toISOString();
+        pola.StatusTicket = "Zamknięty";
       } else if (!zamkniete.checked && t.zamkniete) {
         pola["Datazako_x0144_czenia"] = null;
+        pola.StatusTicket = "W toku";
       }
 
       const wynik = await updateTicketFields(t.id, pola, t.etag);
       t.opis = ta.value;
       t.czas = g;
       t.zamkniete = zamkniete.checked;
+      if (pola.StatusTicket) t.status = pola.StatusTicket as Ticket["status"];
       t.etag = String((wynik as any)["@odata.etag"] ?? t.etag);
       poZapisie();
       komunikat.textContent = "Zapisano";
@@ -804,6 +815,29 @@ function komunikatTeams(
     d.classList.add("crm-dymek-wyjdz");
     setTimeout(() => d.remove(), 450);
   }, 15000);
+}
+
+/** Trwaly wynik zakladania zgloszenia przez przeplyw: zielony z numerem albo czerwony z przyczyna. */
+function wynikZgloszenia(miejsce: HTMLElement, ok: boolean, tytul: string, szczegoly = "") {
+  miejsce.querySelectorAll(":scope > .crm-wynik-zgl").forEach((x) => x.remove());
+  const d = el("div", `crm-dymek-teams crm-wynik-zgl ${ok ? "crm-wynik-ok" : "crm-wynik-blad"}`);
+  const tekst = el("div");
+  tekst.appendChild(el("div", "crm-wynik-tytul", tytul));
+  if (szczegoly) tekst.appendChild(el("div", undefined, szczegoly));
+  d.append(ikona(ok ? "dzwonek" : "klucz"), tekst);
+  miejsce.appendChild(d);
+}
+
+/** Licznik sekund w komunikacie, dopoki przeplyw nie odpowie. Zwraca funkcje zatrzymujaca. */
+function czekanieNaPrzeplyw(komunikat: HTMLElement): () => void {
+  const t0 = Date.now();
+  const pokaz = () => {
+    komunikat.textContent = `Zakładanie zgłoszenia, czekam na przepływ… ${Math.round((Date.now() - t0) / 1000)} s`;
+    komunikat.className = "crm-komunikat";
+  };
+  pokaz();
+  const t = setInterval(pokaz, 1000);
+  return () => clearInterval(t);
 }
 
 async function panelNowego() {
@@ -886,18 +920,17 @@ async function panelNowego() {
   rzad.appendChild(komunikat);
   box.appendChild(rzad);
 
-  // --- TEST: to samo zgloszenie, ale numer z przeplywu HTTP (PRZEPLYW-HTTP.md); tylko dla administratora ---
+  // --- TEST: stara sciezka - sam zapis w SharePoint, numer nadaje przeplyw listy (awaryjnie) ---
   const test = el("button", "crm-btn crm-btn-cichy crm-test-flow", "TEST") as HTMLButtonElement;
-  test.title = "Załóż zgłoszenie i nadaj numer przez przepływ HTTP (Support_TicketCRM_forward_HTTP)";
+  test.title = "Stara ścieżka: zapis w SharePoint, numer nada przepływ listy w ciągu kilku minut";
   test.hidden = true;
   rzad.insertBefore(test, komunikat);
   const dziennik = el("pre", "crm-test-dziennik");
   dziennik.hidden = true;
   box.appendChild(dziennik);
-  // ten przeplyw obsluguje tylko skrzynke wspoldzielona support@ - prywatna skrzynka dostanie osobny
-  const jaAdmin = getMojMail().then((m) => m.trim().toLowerCase() === ADMIN_KONTAKTOW, () => false);
-
-  test.onclick = async () => {
+  // "+ Nowe zgloszenie" w support@: wiersz w Support + przeplyw HTTP (PRZEPLYW-HTTP.md), numer w odpowiedzi.
+  // Prywatna skrzynka dostanie osobny przeplyw - tam zostaje stara sciezka.
+  const zalozHttp = async () => {
     const wybrany = serwisanci[Number(wybor.value)];
     if (!wybrany) {
       komunikat.textContent = "Wybierz opiekuna supportu";
@@ -905,12 +938,13 @@ async function panelNowego() {
       return;
     }
     test.disabled = btn.disabled = wybor.disabled = true;
-    dziennik.hidden = false;
+    // dziennik techniczny pokazujemy dopiero przy bledzie
+    dziennik.hidden = true;
     dziennik.textContent = "";
     const log = (t: string) => (dziennik.textContent += t + "\n");
     const t0 = Date.now();
     const czas = () => `${((Date.now() - t0) / 1000).toFixed(1)} s`;
-    komunikat.textContent = "TEST...";
+    komunikat.textContent = "Zakładanie...";
     komunikat.className = "crm-komunikat";
 
     let token = "";
@@ -920,8 +954,10 @@ async function panelNowego() {
       log(`   OK (${czas()}) ${opisTokenu(token)}`);
     } catch (e: any) {
       log(`   BŁĄD: ${e?.message ?? e}`);
-      komunikat.textContent = "TEST: nie ma tokenu do Power Automate";
-      komunikat.className = "crm-komunikat crm-blad";
+      dziennik.hidden = false;
+      komunikat.textContent = "";
+      wynikZgloszenia(box, false, "Nie udało się założyć zgłoszenia",
+        `Brak tokenu do Power Automate: ${e?.message ?? e}. Spróbuj ponownie albo użyj TEST (stara ścieżka).`);
       test.disabled = btn.disabled = wybor.disabled = false;
       return;
     }
@@ -929,34 +965,54 @@ async function panelNowego() {
     let recordId = "";
     try {
       log(`2. Wiersz w Support (z maila w support@)...`);
-      recordId = String((await createTicket(polaZgloszenia(wybrany, false))).id);
+      const pola = polaZgloszenia(wybrany, false);
+      if (pola["Opiekun_supportuLookupId"] === undefined) {
+        const id = await getSiteUserId(wybrany.mail).catch(() => null);
+        if (id !== null) pola["Opiekun_supportuLookupId"] = String(id);
+      }
+      recordId = String((await createTicket(pola)).id);
       log(`   OK (${czas()}) id=${recordId}`);
     } catch (e: any) {
       log(`   BŁĄD: ${e?.message ?? e}`);
-      komunikat.textContent = "TEST: nie zapisano wiersza";
-      komunikat.className = "crm-komunikat crm-blad";
+      dziennik.hidden = false;
+      komunikat.textContent = "";
+      wynikZgloszenia(box, false, "Nie udało się założyć zgłoszenia", `Nie zapisano w SharePoint: ${e?.message ?? e}`);
       test.disabled = btn.disabled = wybor.disabled = false;
       return;
     }
 
     try {
-      log(`3. Przepływ HTTP...`);
-      const wynik = await runTicketFlow({
-        recordId,
-        mailSubject: temat,
-        opiekunNazwa: wybrany.nazwa,
-        mailItemId: mailIdRest(item),
-        mailKlienta: nadawca,
-        mailOpiekuna: wybrany.mail,
-      }, token);
+      log(`3. Przepływ HTTP (czekam na odpowiedź z końca przepływu)...`);
+      const stop = czekanieNaPrzeplyw(komunikat);
+      let wynik;
+      try {
+        wynik = await runTicketFlow({
+          recordId,
+          mailSubject: temat,
+          opiekunNazwa: wybrany.nazwa,
+          mailItemId: mailIdRest(item),
+          mailKlienta: nadawca,
+          mailOpiekuna: wybrany.mail,
+        }, token);
+      } finally {
+        stop();
+      }
       log(`   OK (${czas()}) HTTP ${wynik.status}: ${wynik.tresc.slice(0, 300)}`);
-      komunikat.textContent = `TEST: zgłoszenie MESco-ID-${wynik.ticketId}`;
-      komunikat.className = "crm-komunikat crm-ok";
+      box.className = "crm-nowe crm-nowe-ok";
+      box.innerHTML = "";
+      wynikZgloszenia(box, true, `Zgłoszenie MESco-ID-${wynik.ticketId} założone`,
+        `${wynik.temat || temat} · opiekun: ${wybrany.nazwa}`);
+      const odsw = el("button", "crm-btn crm-btn-cichy", "Odśwież listę") as HTMLButtonElement;
+      odsw.onclick = () => void pokazZgloszenia();
+      box.appendChild(odsw);
+      return;
     } catch (e: any) {
       log(`   BŁĄD (${czas()}): ${e?.message ?? e}`);
-      log(`   Wiersz id=${recordId} istnieje - numer nada stary przepływ albo trzeba go usunąć.`);
-      komunikat.textContent = "TEST: zapisano, ale numer nie został nadany";
-      komunikat.className = "crm-komunikat crm-blad";
+      log(`   Wiersz id=${recordId} istnieje - sprawdź w SharePoint, zanim założysz ponownie.`);
+      dziennik.hidden = false;
+      komunikat.textContent = "";
+      wynikZgloszenia(box, false, "Nie udało się założyć zgłoszenia",
+        `Wiersz w SharePoint (id ${recordId}) zapisany, ale przepływ nie potwierdził numeru: ${e?.message ?? e}`);
     }
     test.disabled = btn.disabled = wybor.disabled = false;
   };
@@ -973,8 +1029,8 @@ async function panelNowego() {
   ostrzezenie.style.display = "none";
   box.appendChild(ostrzezenie);
 
-  // TEST widoczny tylko dla administratora i tylko w skrzynce support@
-  test.hidden = !(zSupportu && (await jaAdmin));
+  // TEST (stara sciezka) dla wszystkich, ale tylko w support@ - w prywatnej skrzynce glowny przycisk i tak idzie stara sciezka
+  test.hidden = !zSupportu;
 
   /** Pola nowego zgloszenia; reczne = bez MailID i MailSubject, jak zgloszenie z kontaktu firmy. */
   const polaZgloszenia = (wybrany: (typeof serwisanci)[number], reczne: boolean): Record<string, unknown> => {
@@ -1017,12 +1073,17 @@ async function panelNowego() {
     }
 
     ostrzezenie.style.display = "none";
-    btn.disabled = true;
+    btn.disabled = test.disabled = true;
     wybor.disabled = true;
     komunikat.textContent = "Zakładanie...";
     komunikat.className = "crm-komunikat";
 
     const pola = polaZgloszenia(wybrany, reczne);
+    // brak SupportID w MEScoStaff - Id osoby z listy uzytkownikow witryny, zeby Opiekun_supportu nie zostal pusty
+    if (pola["Opiekun_supportuLookupId"] === undefined) {
+      const id = await getSiteUserId(wybrany.mail).catch(() => null);
+      if (id !== null) pola["Opiekun_supportuLookupId"] = String(id);
+    }
 
     try {
       await createTicket(pola);
@@ -1039,13 +1100,14 @@ async function panelNowego() {
     } catch (e: any) {
       komunikat.textContent = e?.message ?? String(e);
       komunikat.className = "crm-komunikat crm-blad";
-      btn.disabled = false;
+      btn.disabled = test.disabled = false;
       wybor.disabled = false;
     }
   };
+  test.onclick = () => void zaloz();
 
   btn.onclick = () => {
-    if (zSupportu) return void zaloz();
+    if (zSupportu) return void zalozHttp();
 
     ostrzezenie.innerHTML = "";
     ostrzezenie.appendChild(el("div", undefined,
@@ -1413,7 +1475,7 @@ async function panelZgloszenia() {
       kom.textContent = "Otwieranie...";
       kom.className = "crm-komunikat";
       try {
-        await updateTicketFields(t.id, { Status: false, Datazako_x0144_czenia: null }, t.etag);
+        await updateTicketFields(t.id, { Status: false, StatusTicket: "W toku", Datazako_x0144_czenia: null }, t.etag);
         box.remove();
         void panelZgloszenia();
       } catch (e: any) {
@@ -1530,6 +1592,7 @@ async function panelZgloszenia() {
           Opis: ta.value,
           Czas: g,
           Status: true,
+          StatusTicket: "Zamknięty",
           Datazako_x0144_czenia: new Date().toISOString(),
         },
         t.etag
@@ -1563,6 +1626,11 @@ async function pokazZgloszenia() {
 
   // --- pasek filtrow ---
   const filtry = el("div", "crm-filtry");
+
+  // jedno klikniecie: wszystkie moje zgloszenia, niezaleznie od numeru i wybranego zakresu
+  const mojeBtn = przyciskIk("crm-btn crm-btn-cichy crm-moje-zgl", "opiekun", "Moje zgłoszenia");
+  mojeBtn.title = "Pokaż wszystkie zgłoszenia, które obsługujesz";
+  filtry.appendChild(mojeBtn);
 
   // numer zgloszenia (poczatek numeru) - szuka w calej liscie, pomija pozostale filtry
   const numer = document.createElement("input");
@@ -1614,20 +1682,30 @@ async function pokazZgloszenia() {
   const lista = el("div");
   root().appendChild(lista);
 
-  void (async () => {
-    try {
-      const osoby = await getSerwisanci();
-      osoby.forEach((o) => {
-        const opt = document.createElement("option");
-        opt.value = o.mail;
-        opt.textContent = o.nazwa;
-        if (o.mail === opiekunZgloszen) opt.selected = true;
-        wybor.appendChild(opt);
-      });
-    } catch (e: any) {
-      pusta.textContent = `opiekunowie: ${e?.message ?? e}`;
-    }
-  })();
+  // opiekunowie: przy osobie / firmie tylko ci, ktorzy realnie cos dla niej robili (z liczba zgloszen)
+  let serwisanciLista: Awaited<ReturnType<typeof getSerwisanci>> = [];
+  const serwisanciGotowi = getSerwisanci().then(
+    (o) => { serwisanciLista = o; },
+    (e: any) => { pusta.textContent = `opiekunowie: ${e?.message ?? e}`; }
+  );
+  const ustawOpiekunow = (ile: Map<string, number> | null, razem = 0) => {
+    wybor.innerHTML = "";
+    pusta.textContent = ile ? `wszyscy opiekunowie (${razem})` : "wszyscy opiekunowie";
+    wybor.appendChild(pusta);
+    const nazwy = new Map(serwisanciLista.map((o) => [o.mail, o.nazwa]));
+    const maile = ile
+      ? [...ile.keys()].sort((a, b) => (nazwy.get(a) ?? a).localeCompare(nazwy.get(b) ?? b, "pl"))
+      : serwisanciLista.map((o) => o.mail);
+    maile.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = ile ? `${nazwy.get(m) ?? m} (${ile.get(m)})` : nazwy.get(m) ?? m;
+      wybor.appendChild(opt);
+    });
+    if (opiekunZgloszen && !maile.includes(opiekunZgloszen)) opiekunZgloszen = "";
+    wybor.value = opiekunZgloszen;
+  };
+  void serwisanciGotowi.then(() => ustawOpiekunow(null));
 
   let pokolenie = 0; // starsza odpowiedz nie nadpisze nowszej przy szybkim pisaniu
   const wczytaj = async () => {
@@ -1674,18 +1752,35 @@ async function pokazZgloszenia() {
         opis.push(`firma: ${f?.FirmaID || companyGuid}`);
       }
 
+      let items: ListItem[];
+      if (osobaMail || companyGuid) {
+        // cala historia osoby / firmy: z niej lista opiekunow, ktorzy faktycznie obslugiwali
+        const [wszystkie] = await Promise.all([
+          getTicketsFiltered({ osobaMail, companyGuid, top: 999 }),
+          serwisanciGotowi,
+        ]);
+        if (moje !== pokolenie) return;
+        const ile = new Map<string, number>();
+        wszystkie.forEach((i) => {
+          const m = String((i.fields as any).MailCreator ?? "").trim().toLowerCase();
+          if (m) ile.set(m, (ile.get(m) ?? 0) + 1);
+        });
+        ustawOpiekunow(ile, wszystkie.length);
+        items = (opiekunZgloszen
+          ? wszystkie.filter((i) => String((i.fields as any).MailCreator ?? "").trim().toLowerCase() === opiekunZgloszen)
+          : wszystkie
+        ).slice(0, 50);
+      } else {
+        await serwisanciGotowi;
+        if (moje !== pokolenie) return;
+        ustawOpiekunow(null);
+        items = await getTicketsFiltered({ mailCreator: opiekunZgloszen, top: 50 });
+        if (moje !== pokolenie) return;
+      }
       if (opiekunZgloszen) {
-        const nazwa = wybor.options[wybor.selectedIndex]?.textContent ?? opiekunZgloszen;
+        const nazwa = serwisanciLista.find((o) => o.mail === opiekunZgloszen)?.nazwa ?? opiekunZgloszen;
         opis.push(`opiekun: ${nazwa}`);
       }
-
-      const items = await getTicketsFiltered({
-        osobaMail,
-        companyGuid,
-        mailCreator: opiekunZgloszen,
-        top: 50,
-      });
-      if (moje !== pokolenie) return;
 
       s.textContent = opis.length
         ? `${opis.join(" · ")} — ${items.length}`
@@ -1702,13 +1797,24 @@ async function pokazZgloszenia() {
 
   let timer: number | undefined;
   numer.oninput = () => {
+    pokazOpiekuna();
     clearTimeout(timer);
     timer = window.setTimeout(() => void wczytaj(), 300);
   };
 
   // filtr opiekuna nie ma sensu przy "Moje zgloszenia"
-  const pokazOpiekuna = () => (wybor.style.display = zakresZgloszen === "moje" ? "none" : "");
+  const pokazOpiekuna = () => {
+    wybor.style.display = zakresZgloszen === "moje" ? "none" : "";
+    mojeBtn.classList.toggle("crm-moje-aktywne", zakresZgloszen === "moje" && !numer.value.trim());
+  };
   pokazOpiekuna();
+  mojeBtn.onclick = () => {
+    numer.value = "";
+    zakres.value = zakresZgloszen = "moje";
+    zakresy[klucz] = zakresZgloszen;
+    pokazOpiekuna();
+    void wczytaj();
+  };
   zakres.onchange = () => {
     zakresZgloszen = zakres.value as ZakresZgl;
     zakresy[klucz] = zakresZgloszen;
@@ -1846,8 +1952,8 @@ async function pokazSzanse() {
 // kolejnosc jak w obiegu zgloszenia; zalatwione zwiniete, bo bywa ich setki
 const KATEGORIE_ZGLOSZEN = [
   { nazwa: "Przydzielony", otwarta: true },
+  { nazwa: "W toku", otwarta: true },
   { nazwa: "Oczekuje na odpowiedź", otwarta: true },
-  { nazwa: "Rozwiązany", otwarta: false },
   { nazwa: "Zamknięty", otwarta: false },
 ];
 const ZGLOSZEN_NA_STRONE = 30;
@@ -1889,7 +1995,7 @@ async function listaMoichZgloszen(lista: HTMLElement, s: HTMLElement, nieaktualn
     naglowek.className = "crm-kat-naglowek";
     const kropka = el("span", "crm-kat-kropka");
     kropka.style.background = KOLOR_STATUSU[nazwa] ?? "#3860B2";
-    naglowek.append(kropka, el("span", "crm-kat-nazwa", nazwa), el("span", "crm-kat-ile", String(wGrupie.length)));
+    naglowek.append(kropka, el("span", "crm-kat-nazwa", etykietaStatusu(nazwa)), el("span", "crm-kat-ile", String(wGrupie.length)));
     sek.appendChild(naglowek);
 
     const tresc = el("div", "crm-kat-lista");
@@ -2743,6 +2849,13 @@ async function formularzReczny(
     box.remove();
     btn.disabled = false;
   };
+  // --- TEST: stara sciezka - sam zapis w SharePoint, numer nadaje przeplyw listy (awaryjnie) ---
+  const test = el("button", "crm-btn crm-btn-cichy crm-test-flow", "TEST") as HTMLButtonElement;
+  test.title = "Stara ścieżka: zapis w SharePoint, numer nada przepływ listy w ciągu kilku minut";
+  rzad.appendChild(test);
+  const dziennik = el("pre", "crm-test-dziennik");
+  dziennik.hidden = true;
+  box.appendChild(dziennik);
 
   // --- dane do list: zalogowany, serwisanci, opcje Zlecil / Cel ---
   let zalogowany = "";
@@ -2817,12 +2930,8 @@ async function formularzReczny(
   opis.oninput = sprawdz;
   sprawdz();
 
-  zapisz.onclick = async () => {
-    if (!sprawdz()) return;
-    zapisz.disabled = anuluj.disabled = true;
-    komunikat.textContent = "Zakładanie...";
-    komunikat.className = "crm-komunikat";
-
+  /** Pola wiersza Support z formularza; wspolne dla zapisu i TESTU. */
+  const zbudujPola = async () => {
     // opiekun: wybrany "inny" albo zalogowany
     const wybrany = inny.checked ? serwisanci[Number(wybor.value)] : serwisanci.find((s) => s.mail === zalogowany);
     const opiekunNazwa = wybrany?.nazwa ?? mojaNazwa;
@@ -2845,12 +2954,100 @@ async function formularzReczny(
       Opis: opis.value,
     };
     if (dataZam.i.value) pola["Datazako_x0144_czenia"] = dzienSP(dataZam.i.value);
+    if (zamkniete.checked) pola.StatusTicket = "Zamknięty";
     if (czas.i.value.trim()) pola.Czas = g;
     if (preSales.checked && zlecil.value) pola.Zlecil = zlecil.value;
     if (preSales.checked && cel.value) pola.Cel = cel.value;
+    const siteId = wybrany?.siteId ?? (await getSiteUserId(opiekunMail).catch(() => null));
+    if (siteId !== null && siteId !== undefined) pola["Opiekun_supportuLookupId"] = String(siteId);
+    return { pola, opiekunNazwa, opiekunMail };
+  };
+
+  // glowny przycisk: wiersz w Support + przeplyw HTTP (galaz reczna, bez danych maila)
+  zapisz.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = anuluj.disabled = test.disabled = true;
+    dziennik.hidden = true; // dziennik techniczny tylko przy bledzie
+    dziennik.textContent = "";
+    const log = (t: string) => (dziennik.textContent += t + "\n");
+    const t0 = Date.now();
+    const sek = () => `${((Date.now() - t0) / 1000).toFixed(1)} s`;
+    const koniec = (tekst: string, ok: boolean) => {
+      komunikat.textContent = tekst;
+      komunikat.className = ok ? "crm-komunikat crm-ok" : "crm-komunikat crm-blad";
+      zapisz.disabled = anuluj.disabled = test.disabled = false;
+      sprawdz();
+      if (!ok) dziennik.hidden = false;
+    };
+    komunikat.textContent = "Zakładanie...";
+    komunikat.className = "crm-komunikat";
+
+    let token = "";
     try {
-      const siteId = wybrany?.siteId ?? (await getSiteUserId(opiekunMail).catch(() => null));
-      if (siteId !== null && siteId !== undefined) pola["Opiekun_supportuLookupId"] = String(siteId);
+      log("1. Token Power Automate...");
+      token = await getFlowToken();
+      log(`   OK (${sek()}) ${opisTokenu(token)}`);
+    } catch (e: any) {
+      log(`   BŁĄD: ${e?.message ?? e}`);
+      return koniec("Brak tokenu do Power Automate — spróbuj ponownie albo użyj TEST (stara ścieżka)", false);
+    }
+
+    const { pola, opiekunNazwa, opiekunMail } = await zbudujPola();
+    let recordId = "";
+    try {
+      log("2. Wiersz w Support (ręczne, bez MailID)...");
+      recordId = String((await createTicket(pola)).id);
+      log(`   OK (${sek()}) id=${recordId}`);
+    } catch (e: any) {
+      log(`   BŁĄD: ${e?.message ?? e}`);
+      return koniec("Nie udało się zapisać zgłoszenia w SharePoint", false);
+    }
+
+    try {
+      log("3. Przepływ HTTP (bez tematu, maila klienta i Id wiadomości; czekam na odpowiedź)...");
+      const stop = czekanieNaPrzeplyw(komunikat);
+      let wynik;
+      try {
+        wynik = await runTicketFlow({
+          recordId,
+          mailSubject: "",
+          opiekunNazwa,
+          mailItemId: "",
+          mailKlienta: "",
+          mailOpiekuna: opiekunMail,
+        }, token);
+      } finally {
+        stop();
+      }
+      log(`   OK (${sek()}) HTTP ${wynik.status}: ${wynik.tresc.slice(0, 300)}`);
+      // przeplyw ustawia "Przydzielony" - zamkniete od razu zgloszenie wraca na "Zamknięty"
+      if (zamkniete.checked) {
+        await updateTicketFields(recordId, { StatusTicket: "Zamknięty" }).catch((e) =>
+          console.warn("StatusTicket po przeplywie:", e));
+      }
+      // sukces: formularz znika, wynik zostaje na karcie kontaktu
+      box.remove();
+      komunikat.textContent = "";
+      btn.disabled = false;
+      wynikZgloszenia(card, true, `Zgłoszenie MESco-ID-${wynik.ticketId} założone`,
+        `${wynik.temat ? wynik.temat + " · " : ""}opiekun: ${opiekunNazwa}`);
+    } catch (e: any) {
+      log(`   BŁĄD (${sek()}): ${e?.message ?? e}`);
+      log(`   Wiersz id=${recordId} istnieje - sprawdź w SharePoint, zanim założysz ponownie.`);
+      koniec("", false);
+      wynikZgloszenia(box, false, "Nie udało się założyć zgłoszenia",
+        `Wiersz w SharePoint (id ${recordId}) zapisany, ale przepływ nie potwierdził numeru: ${e?.message ?? e}`);
+    }
+  };
+
+  // TEST: stara sciezka - tylko zapis, numer nada przeplyw listy
+  test.onclick = async () => {
+    if (!sprawdz()) return;
+    zapisz.disabled = anuluj.disabled = test.disabled = true;
+    komunikat.textContent = "Zakładanie...";
+    komunikat.className = "crm-komunikat";
+    try {
+      const { pola, opiekunNazwa } = await zbudujPola();
       await createTicket(pola);
       box.remove();
       komunikat.textContent = `Ticket utworzony dla ${opiekunNazwa}`;
@@ -2860,7 +3057,7 @@ async function formularzReczny(
     } catch (e: any) {
       komunikat.textContent = `Nie udało się zapisać zgłoszenia: ${e?.message ?? e}`;
       komunikat.className = "crm-komunikat crm-blad";
-      zapisz.disabled = anuluj.disabled = false;
+      zapisz.disabled = anuluj.disabled = test.disabled = false;
     }
   };
 }
@@ -3758,7 +3955,8 @@ function kartaNotatki(nt: Nota, ja: string, poUsunieciu?: () => void): HTMLEleme
 }
 
 async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
-  const items = await getByCompany("Notes", c.guid, { top: 50 });
+  // wszystkie notatki firmy (bez progu 50), najnowsze na gorze, wyswietlane porcjami
+  const items = await getByCompanyWszystkie("Notes", c.guid);
     // kosz pokazujemy tylko przy wlasnych notatkach
   let ja = "";
   try {
@@ -3770,7 +3968,19 @@ async function zakladkaNotatki(box: HTMLElement, s: HTMLElement, c: Company) {
   s.textContent = `Notatki — ${lista.length}`;
   if (!lista.length) return pusto(box, "Brak notatek dla tej firmy.");
 
-  lista.forEach((nt) => box.appendChild(kartaNotatki(nt, ja)));
+  const NA_STRONE = 30;
+  let pokazane = 0;
+  const wiecej = el("button", "crm-btn crm-btn-cichy crm-kat-wiecej") as HTMLButtonElement;
+  const dorysuj = () => {
+    lista.slice(pokazane, pokazane + NA_STRONE).forEach((nt) => box.insertBefore(kartaNotatki(nt, ja), wiecej));
+    pokazane = Math.min(pokazane + NA_STRONE, lista.length);
+    const zostalo = lista.length - pokazane;
+    wiecej.hidden = zostalo <= 0;
+    wiecej.textContent = `Pokaż więcej (${Math.min(zostalo, NA_STRONE)} z ${zostalo})`;
+  };
+  box.appendChild(wiecej);
+  wiecej.onclick = dorysuj;
+  dorysuj();
 }
 
 async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, demo = false) {
@@ -3778,7 +3988,7 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, demo =
   const wMailu = widok === "szanse";
 
   // notatki firmy jednym zapytaniem - przy TECS-ach grupujemy je po Opps_ID = TECSGUID
-  const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
+  const notatki = getByCompanyWszystkie("Notes", c.guid).then((it) => it.map(toNota));
   notatki.catch((e) => console.error("notatki TECS:", e));
   const ja = getMojaNazwa().then((n) => n.trim().toLowerCase(), () => "");
 
@@ -6201,7 +6411,7 @@ async function zakladkaSzanse(
   });
 
   // notatki firmy jednym zapytaniem - przy szansach grupujemy je po Opps_ID
-  const notatki = getByCompany("Notes", c.guid, { top: 500 }).then((it) => it.map(toNota));
+  const notatki = getByCompanyWszystkie("Notes", c.guid).then((it) => it.map(toNota));
   notatki.catch((e) => console.error("notatki szans:", e));
   const ja = getMojaNazwa().then((n) => n.trim().toLowerCase(), () => "");
 
