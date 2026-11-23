@@ -2,12 +2,18 @@
 // Strona otwierana przez Office Dialog API. Loguje uzytkownika i odsyla token do panelu.
 /* global Office, document, window */
 import { PublicClientApplication } from "@azure/msal-browser";
-import { msalConfig, graphScopes } from "../taskpane/authConfig";
+import { msalConfig, graphScopes, flowScopes, SP_HOST } from "../taskpane/authConfig";
 
 const dialogRedirect = `${window.location.origin}/dialog.html`;
+
+// Jedyne zakresy, o jakie panel kiedykolwiek prosi (acquire() w graphService.ts) -
+// parametr z URL nie moze wymusic logowania z dowolnym, obcym zakresem.
+const ZNANE_ZAKRESY = new Set([...graphScopes, ...flowScopes, "Contacts.ReadWrite", `https://${SP_HOST}/AllSites.Write`]);
+
 // panel moze poprosic o dodatkowy zakres (np. Contacts.ReadWrite) - ?scopes=a b
 const zParametru = new URLSearchParams(window.location.search).get("scopes");
-const scopes = zParametru ? zParametru.split(" ").filter(Boolean) : graphScopes;
+const zadane = zParametru ? zParametru.split(" ").filter(Boolean) : [];
+const scopes = zadane.length && zadane.every((s) => ZNANE_ZAKRESY.has(s)) ? zadane : graphScopes;
 
 Office.onReady(async () => {
   try {
@@ -56,5 +62,10 @@ function send(payload: { ok: boolean; token?: string; error?: string }) {
 
 function show(msg: string) {
   const box = document.getElementById("box");
-  if (box) box.innerHTML = `<p class="err">${msg}</p>`;
+  if (!box) return;
+  box.innerHTML = "";
+  const p = document.createElement("p");
+  p.className = "err";
+  p.textContent = msg;
+  box.appendChild(p);
 }

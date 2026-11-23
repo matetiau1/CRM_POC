@@ -5,3 +5,4 @@ dist/
 npm-debug.log*
 *.bak
 SPEC.md
+STATUS.md

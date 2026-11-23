@@ -5,7 +5,7 @@ import {
   wyczyscCacheFirm, getContactByEmail, createTicket, getSerwisanci, getContactsByCompany,
   getTicketsFiltered, getMojMail, getByCompany, getCompanyByGuid,createListItem, getLookupOptions, getMojaNazwa, deleteListItem,
   getTicketByNumber, getAllCompanies, getChoiceOptions, getAllContacts, wyczyscCacheKontaktow,
-  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, getCalaLista, getByCompanyWszystkie, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
+  getLiczbaSupportowRok, getSiteUserId, dodajDoKontaktowOutlook, getFlowToken, opisTokenu, runTicketFlow, runOfferFlow, getCalaLista, getByCompanyWszystkie, getZalaczniki, dodajZalacznik, usunZalacznik, pobierzZalacznik, getPlikiFolderu, getUrlFolderu, utworzFolder, wyslijPlik, usunPlik, getCennik, getOpcjeLookupu, czyPracownikMESco, getZgloszeniaObslugujacego, nazwaWewnetrzna, getCenyTecs, getProgiRabatowe,
 } from "./graphService";
 import type { ListItem, PozycjaCennika, CenaTecs, ProgRabatu } from "./graphService";
 import {
@@ -630,10 +630,10 @@ function wynikZgloszenia(miejsce: HTMLElement, ok: boolean, tytul: string, szcze
 }
 
 /** Licznik sekund w komunikacie, dopoki przeplyw nie odpowie. Zwraca funkcje zatrzymujaca. */
-function czekanieNaPrzeplyw(komunikat: HTMLElement): () => void {
+function czekanieNaPrzeplyw(komunikat: HTMLElement, co = "Zakładanie zgłoszenia, czekam na przepływ"): () => void {
   const t0 = Date.now();
   const pokaz = () => {
-    komunikat.textContent = `Zakładanie zgłoszenia, czekam na przepływ… ${Math.round((Date.now() - t0) / 1000)} s`;
+    komunikat.textContent = `${co}… ${Math.round((Date.now() - t0) / 1000)} s`;
     komunikat.className = "crm-komunikat";
   };
   pokaz();
@@ -3904,8 +3904,8 @@ async function zakladkaTecs(box: HTMLElement, s: HTMLElement, c: Company, demo =
       sekcjaNotatek(k, rzadP, {
         id: t.id, guid: t.guid, nazwa: t.nazwa, firma: t.firmaId, companyGuid: c.guid, etap: t.etap,
       }, c, notatki, ja, "Brak notatek do tego TECS-u.");
-      sekcjaZalacznikow(k, rzadP, "Opps_TECS", t.id, folderFirmy(c));
-      przyciskGenerujOferte(rzadP);
+      const odswiezZal = sekcjaZalacznikow(k, rzadP, "Opps_TECS", t.id, folderFirmy(c));
+      przyciskGenerujOferte(k, rzadP, () => ({ rodzaj: "TECS", guid: t.guid }), c, odswiezZal);
       prod.onclick = () => {
         if (panel.childElementCount) {
           panel.innerHTML = "";
@@ -6719,8 +6719,9 @@ function kartaSzansy(
 
   // notatki szansy - bez OPPSGUID nie da sie ich powiazac
   if (o.guid) sekcjaNotatek(k, akcje, o, c, notatki, ja, "Brak notatek do tej szansy.");
-  if (o.id) sekcjaZalacznikow(k, akcje, "Opps", o.id, folderFirmy(c));
-  przyciskGenerujOferte(akcje);
+  const odswiezZal = o.id ? sekcjaZalacznikow(k, akcje, "Opps", o.id, folderFirmy(c)) : () => undefined;
+  // rodzaj generatora = TypBiznesu (Paid-up / Lease / AEC), jak dsAGen_1 w Power Apps
+  if (o.guid) przyciskGenerujOferte(k, akcje, () => ({ rodzaj: o.typ, guid: o.guid }), c, odswiezZal);
   return k;
 }
 
@@ -7174,7 +7175,7 @@ function wyborFolderu(
  * Przycisk "Załączniki" przy karcie - lista plikow z SharePointa (oferty z generatora),
  * dodawanie przeciaganiem, z dysku albo z zalacznikow otwartego maila.
  */
-function sekcjaZalacznikow(k: HTMLElement, akcje: HTMLElement, listName: string, itemId: string, firma: string) {
+function sekcjaZalacznikow(k: HTMLElement, akcje: HTMLElement, listName: string, itemId: string, firma: string): () => void {
   const btn = przyciskIk("crm-btn crm-btn-cichy", "spinacz", "Załączniki");
   akcje.appendChild(btn);
   const panel = el("div", "crm-zal");
@@ -7315,13 +7316,41 @@ function sekcjaZalacznikow(k: HTMLElement, akcje: HTMLElement, listName: string,
     btn.classList.toggle("crm-btn-wcisniety", !widac);
     if (!widac && !wczytane) void wczytaj();
   };
+  return () => { if (wczytane) void wczytaj(); };
 }
 
-/** "Generuj ofertę" na karcie szansy i TECS-u - na razie bez akcji, generator dojdzie pozniej. */
-function przyciskGenerujOferte(akcje: HTMLElement) {
+/**
+ * "Generuj ofertę" na karcie szansy i TECS-u: przeplyw GeneratorOfert... http tworzy dokument,
+ * dolacza go do elementu listy i zwraca numer oferty. Czekamy na odpowiedz (do ok. 2 min).
+ */
+function przyciskGenerujOferte(
+  k: HTMLElement,
+  akcje: HTMLElement,
+  cel: () => { rodzaj: string; guid: string },
+  c: Company,
+  poWygenerowaniu: () => void
+) {
   const b = przyciskIk("crm-btn crm-btn-cichy", "dokument", "Generuj ofertę");
-  b.title = "Generowanie oferty — wkrótce";
-  b.onclick = () => blysk(b, "wkrótce");
+  const komunikat = el("div", "crm-komunikat");
+  b.onclick = async () => {
+    const { rodzaj, guid } = cel();
+    b.disabled = true;
+    k.appendChild(komunikat);
+    const stop = czekanieNaPrzeplyw(komunikat, "Przygotowuję ofertę — cierpliwości, to zwykle kilkanaście sekund");
+    try {
+      const numer = await runOfferFlow(rodzaj, guid, c.guid);
+      stop();
+      komunikat.remove();
+      wynikZgloszenia(k, true, "Oferta wygenerowana", `${numer ? `Numer: ${numer}. ` : ""}Ofertę znajdziesz w zakładce Załączniki. Powodzenia przy sprzedaży :)`);
+      poWygenerowaniu();
+    } catch (e: any) {
+      stop();
+      komunikat.remove();
+      wynikZgloszenia(k, false, "Nie udało się wygenerować oferty", e?.message ?? String(e));
+    } finally {
+      b.disabled = false;
+    }
+  };
   akcje.appendChild(b);
 }
 

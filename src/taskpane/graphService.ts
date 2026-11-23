@@ -5,7 +5,7 @@ import {
   InteractionRequiredAuthError,
 } from "@azure/msal-browser";
 import type { IPublicClientApplication } from "@azure/msal-browser";
-import { msalConfig, graphScopes, SP_HOST, SP_SITE_PATH, SP_LIST_NAME, flowScopes, FLOW_URL } from "./authConfig";
+import { msalConfig, graphScopes, SP_HOST, SP_SITE_PATH, SP_LIST_NAME, flowScopes, FLOW_URL, OFERTA_URL } from "./authConfig";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -380,26 +380,23 @@ export type FlowParams = {
 
 export type FlowWynik = { ticketId: number; temat: string; status: number; tresc: string };
 
-/** Uruchamia przeplyw Support_TicketCRM_forward_HTTP i zwraca nadany numer zgloszenia. */
-export async function runTicketFlow(p: FlowParams, token?: string): Promise<FlowWynik> {
+/**
+ * POST do przeplywu z wyzwalaczem HTTP (token konta z tenanta). Zwraca tresc odpowiedzi 200;
+ * bledy (siec, limit, 504, Response bledu, 202 bez odpowiedzi) zamienia na czytelne wyjatki.
+ * po504 - co powiedziec uzytkownikowi, gdy Power Automate zerwie polaczenie, a przeplyw dziala dalej.
+ */
+async function postFlow(url: string, body: Record<string, string>, po504: string, token?: string): Promise<{ res: Response; tresc: string }> {
   const t = token ?? (await getFlowToken());
   let res: Response;
-  // przeplyw odpowiada dopiero na koncu (Teams, maile, Delay) - dajemy mu do 3 minut
+  // przeplyw odpowiada dopiero na koncu - dajemy mu do 3 minut
   const stoper = new AbortController();
   const limit = setTimeout(() => stoper.abort(), 180000);
   try {
-    res = await fetch(FLOW_URL, {
+    res = await fetch(url, {
       method: "POST",
       signal: stoper.signal,
       headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: p.recordId,
-        text_1: p.mailSubject,
-        text_2: p.opiekunNazwa,
-        text_3: p.mailItemId,
-        text_4: p.mailKlienta,
-        text_5: p.mailOpiekuna,
-      }),
+      body: JSON.stringify(body),
     });
   } catch (e: any) {
     clearTimeout(limit);
@@ -409,10 +406,8 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
   }
   clearTimeout(limit);
   const tresc = await res.text();
-  // 504: Power Automate trzyma polaczenie max ok. 2 min - przeplyw dalej dziala, numer mogl zostac nadany
-  if (res.status === 504) {
-    throw new Error("Przepływ nie odpowiedział w limicie 2 minut (504). Zgłoszenie mogło zostać założone — odśwież listę przed ponowną próbą.");
-  }
+  // 504: Power Automate trzyma polaczenie max ok. 2 min - przeplyw dalej dziala
+  if (res.status === 504) throw new Error(`Przepływ nie odpowiedział w limicie 2 minut (504). ${po504}`);
   if (!res.ok) {
     // Response bledu z przeplywu: { status: "error", message: "..." }
     let msg = "";
@@ -420,7 +415,20 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
     throw new Error(msg ? `Przepływ: ${msg} (${res.status})` : `Przepływ odrzucił wywołanie (${res.status}): ${tresc.slice(0, 300)}`);
   }
   // 202 = przeplyw przyjal, ale Response nie wrocil
-  if (res.status === 202) throw new Error("Przepływ przyjął zgłoszenie (202), ale nie zwrócił numeru");
+  if (res.status === 202) throw new Error("Przepływ przyjął wywołanie (202), ale nie zwrócił odpowiedzi");
+  return { res, tresc };
+}
+
+/** Uruchamia przeplyw Support_TicketCRM_forward_HTTP i zwraca nadany numer zgloszenia. */
+export async function runTicketFlow(p: FlowParams, token?: string): Promise<FlowWynik> {
+  const { res, tresc } = await postFlow(FLOW_URL, {
+    text: p.recordId,
+    text_1: p.mailSubject,
+    text_2: p.opiekunNazwa,
+    text_3: p.mailItemId,
+    text_4: p.mailKlienta,
+    text_5: p.mailOpiekuna,
+  }, "Zgłoszenie mogło zostać założone — odśwież listę przed ponowną próbą.", token);
   let dane: any = {};
   try {
     dane = JSON.parse(tresc);
@@ -437,6 +445,23 @@ export async function runTicketFlow(p: FlowParams, token?: string): Promise<Flow
     throw new Error(`Przepływ nie zwrócił numeru zgłoszenia: ${tresc.slice(0, 200)}`);
   }
   return { ticketId, temat: String(dane.temat ?? ""), status: res.status, tresc };
+}
+
+/**
+ * Generator ofert (przeplywy "GeneratorOfert... http", opis w http.md):
+ * text = OPPSGUID szansy albo TECSGUID, text_1 = IdentyfikatorCompanies. Zwraca numer oferty.
+ */
+export async function runOfferFlow(rodzaj: string, guid: string, firmaGuid: string): Promise<string> {
+  const url = OFERTA_URL[rodzaj];
+  if (!url) throw new Error(`Brak generatora oferty dla typu „${rodzaj || "brak"}”`);
+  const { tresc } = await postFlow(url, { text: guid, text_1: firmaGuid },
+    "Oferta mogła zostać wygenerowana — sprawdź za chwilę załączniki przed ponowną próbą.");
+  let dane: any = {};
+  try { dane = JSON.parse(tresc); } catch { /* sprawdzone nizej */ }
+  if (String(dane.status ?? "").toLowerCase() !== "ok") {
+    throw new Error(`Przepływ nie potwierdził wygenerowania oferty: ${tresc.slice(0, 200)}`);
+  }
+  return String(dane.numerOferty ?? "");
 }
 
 /** Wszystkie elementy listy (strony po 999) - do list bez filtra, np. wnioski HR dla administracji. */
